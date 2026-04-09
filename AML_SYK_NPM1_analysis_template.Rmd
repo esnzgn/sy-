@@ -1,0 +1,515 @@
+---
+title: "AML SYK inhibitor response analysis"
+author: "Ehsan Zangene"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    df_print: paged
+runtime: shiny
+params:
+  excel_file: "../data/MS Figure data_4.7.2026.xlsx"
+  output_dir: "results"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = F,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 9,
+  fig.height = 5,
+  dpi = 150
+)
+```
+
+# 1. Packages
+
+```{r packages}
+required_pkgs <- c("rlang",
+  "readxl", "writexl", "tidyverse", "janitor", "stringr", "glue",
+  "broom", "broom.mixed", "pracma", "lme4", "lmerTest", "emmeans",
+  "patchwork", "scales", "DT", "plotly", "viridis", "pheatmap"
+)
+
+installed <- rownames(installed.packages())
+for (pkg in setdiff(required_pkgs, installed)) {
+  install.packages(pkg)
+}
+
+invisible(lapply(required_pkgs, library, character.only = TRUE))
+
+# params = list(
+#   excel_file = "../data/MS Figure data_4.7.2026.xlsx",
+#   output_dir = "results" )
+
+dir.create(params$output_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+# 2. Project paths
+
+```{r paths}
+excel_path <- params$excel_file
+stopifnot(file.exists(excel_path))
+
+fig_dir  <- file.path(params$output_dir, "figures")
+tab_dir  <- file.path(params$output_dir, "tables")
+rds_dir  <- file.path(params$output_dir, "rds")
+
+dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(tab_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(rds_dir, showWarnings = FALSE, recursive = TRUE)
+```
+
+# 3. Read every sheet from the Excel workbook
+
+```{r read-all-sheets}
+excel_sheets_vec <- readxl::excel_sheets(excel_path)
+
+raw_sheets <- setNames(
+  lapply(excel_sheets_vec, function(sh) readxl::read_excel(excel_path, sheet = sh)),
+  excel_sheets_vec
+)
+
+clean_names_df <- function(df) {
+  df %>% janitor::clean_names()
+}
+
+clean_sheets <- lapply(raw_sheets, clean_names_df)
+
+tibble(clean_sheets$Fig6_PA)
+
+saveRDS(raw_sheets, file.path(rds_dir, "raw_sheets.rds"))
+saveRDS(clean_sheets, file.path(rds_dir, "clean_sheets.rds"))
+
+sheet_inventory <- tibble(
+  sheet = names(clean_sheets),
+  nrow  = map_int(clean_sheets, nrow),
+  ncol  = map_int(clean_sheets, ncol),
+  columns = map_chr(clean_sheets, ~ paste(names(.x), collapse = ", "))
+)
+
+write_xlsx(list(sheet_inventory = sheet_inventory), file.path(tab_dir, "sheet_inventory.xlsx"))
+sheet_inventory
+
+fig6_pa = clean_sheets$Fig6_PA
+```
+
+```{r clean-data}
+stopifnot(!is.null(fig6_pa))
+
+fig6_pa <- fig6_pa %>%
+  as_tibble() %>%
+  clean_names() %>%
+  mutate(
+    flow_time = as.numeric(flow_time),
+    treat = factor(treat, levels = c("UT", "ENTO", "LANRA")),
+    npm1_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    rel_p_syk = as.numeric(rel_p_syk),
+    dose_n_m = readr::parse_number(dosage),
+    dose_unit = stringr::str_extract(dosage, "[A-Za-z]+$"),
+    dose_unit = if_else(is.na(dose_unit), "nM", dose_unit),
+    dose_nM = case_when(
+      dose_n_m == 0 ~ 0,
+      dose_unit == "nM" ~ dose_n_m,
+      dose_unit == "uM" ~ dose_n_m * 1000,
+      dose_unit == "mM" ~ dose_n_m * 1e6,
+      TRUE ~ dose_n_m
+    ),
+    dose_label = factor(dosage, levels = unique(dosage))
+  )
+
+fig6_pa
+```
+
+# Structure check
+
+```{r structure-check}
+fig6_pa %>% count(flow_time, treat, npm1_genot, dosage)
+```
+
+# Reconstruct sample IDs
+
+There is **no explicit sample ID column** in this sheet. To calculate per-sample dose-response curves and AUC, we need one. The code below reconstructs a `sample_id` under the following assumption:
+
+-   within each `flow_time × npm1_genot × treat` block,
+-   observations are ordered by sample,
+-   and each sample contributes one value per dose.
+
+For example, for `ENTO` at 2 h in `WT`, the first 3 doses are assumed to belong to sample 1 and the next 3 doses to sample 2.
+
+```{r reconstruct-sample-id}
+# Number of non-zero doses within each time/treat block
+n_doses_lookup <- fig6_pa %>%
+  filter(treat != "UT") %>%
+  distinct(flow_time, treat, dosage, dose_nM) %>%
+  count(flow_time, treat, name = "n_doses")
+
+fig6_with_id <- fig6_pa %>%
+  left_join(n_doses_lookup, by = c("flow_time", "treat")) %>%
+  group_by(flow_time, npm1_genot, treat) %>%
+  mutate(row_in_group = row_number()) %>%
+  ungroup() %>%
+  mutate(
+    sample_id = case_when(
+      treat == "UT" ~ row_in_group,
+      TRUE ~ ceiling(row_in_group / n_doses)
+    ),
+    sample_key = paste(flow_time, npm1_genot, sample_id, sep = "_")
+  ) %>%
+  select(-row_in_group)
+
+fig6_with_id %>% arrange(flow_time, npm1_genot, treat, sample_id, dose_nM)
+```
+
+# QC check for inferred sample IDs
+
+```{r qc-sample-id}
+fig6_with_id %>%
+  count(flow_time, npm1_genot, treat, sample_id) %>%
+  arrange(flow_time, npm1_genot, treat, sample_id)
+```
+
+# Convert to inhibition metric
+
+`rel_p_syk` is already normalized to untreated. A lower value means stronger inhibition. For intuition, we also define:
+
+-   `inhibition = 1 - rel_p_syk`
+
+So larger inhibition means stronger drug response.
+
+```{r add-inhibition}
+fig6_with_id <- fig6_with_id %>%
+  mutate(
+    inhibition = 1 - rel_p_syk,
+    log2_rel_p_syk = log2(rel_p_syk)
+  )
+
+fig6_with_id
+```
+
+# Quick descriptive summary
+
+```{r descriptive-summary}
+summary_tbl <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  group_by(flow_time, treat, npm1_genot, dosage, dose_nM) %>%
+  summarise(
+    n = n(),
+    median_rel_p_syk = median(rel_p_syk, na.rm = TRUE),
+    mean_rel_p_syk = mean(rel_p_syk, na.rm = TRUE),
+    sd_rel_p_syk = sd(rel_p_syk, na.rm = TRUE),
+    median_inhibition = median(inhibition, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+summary_tbl
+write.csv(summary_tbl, file.path("results", "tables", "fig6_pa_summary_by_condition.csv"), row.names = FALSE)
+```
+
+# Plot 1: individual dose-response trajectories
+
+This is the clearest replacement for the current bar plot. It shows:
+
+-   each inferred sample trajectory,
+-   all individual points,
+-   and genotype-level median trend lines.
+
+```{r plot-dose-response, fig.width=11, fig.height=6}
+p_dose <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  ggplot(aes(x = dose_nM, y = rel_p_syk, color = npm1_genot)) +
+  geom_hline(yintercept = 1, linetype = "dotted", linewidth = 0.5) +
+  geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
+  geom_point(size = 2.4) +
+  stat_summary(
+    aes(group = npm1_genot),
+    fun = median,
+    geom = "line",
+    linewidth = 1.2
+  ) +
+  stat_summary(
+    aes(group = npm1_genot),
+    fun = median,
+    geom = "point",
+    size = 3.2,
+    shape = 18
+  ) +
+  facet_grid(flow_time ~ treat, scales = "free_x") +
+  scale_x_continuous(
+    trans = pseudo_log_trans(base = 10),
+    breaks = c(1, 10, 30, 200, 1000, 5000),
+    labels = c("1", "10", "30", "200", "1000", "5000")
+  ) +
+  labs(
+    title = "Figure 6A: dose-response of relative pSYK by NPM1 genotype",
+    x = "Dose (nM)",
+    y = "Relative pSYK (treated / untreated)",
+    color = "NPM1"
+  ) +
+  theme_classic(base_size = 12)
+
+p_dose
+
+ggsave(file.path("results", "figures", "fig6_pa_dose_response.png"), p_dose, width = 11, height = 6, dpi = 300)
+```
+
+# Plot 2: same data as inhibition
+
+Some readers find this easier to interpret because higher values mean stronger response.
+
+```{r plot-inhibition, fig.width=11, fig.height=6}
+p_inhib <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  ggplot(aes(x = dose_nM, y = inhibition, color = npm1_genot)) +
+  geom_hline(yintercept = 0, linetype = "dotted", linewidth = 0.5) +
+  geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
+  geom_point(size = 2.4) +
+  stat_summary(
+    aes(group = npm1_genot),
+    fun = median,
+    geom = "line",
+    linewidth = 1.2
+  ) +
+  stat_summary(
+    aes(group = npm1_genot),
+    fun = median,
+    geom = "point",
+    size = 3.2,
+    shape = 18
+  ) +
+  facet_grid(flow_time ~ treat, scales = "free_x") +
+  scale_x_continuous(
+    trans = pseudo_log_trans(base = 10),
+    breaks = c(1, 10, 30, 200, 1000, 5000),
+    labels = c("1", "10", "30", "200", "1000", "5000")
+  ) +
+  labs(
+    title = "Figure 6A: inhibition view of pSYK response",
+    x = "Dose (nM)",
+    y = "Inhibition = 1 - relative pSYK",
+    color = "NPM1"
+  ) +
+  theme_classic(base_size = 12)
+
+p_inhib
+
+ggsave(file.path("results", "figures", "fig6_pa_inhibition_response.png"), p_inhib, width = 11, height = 6, dpi = 300)
+```
+
+# Direct between-genotype statistics at matched conditions
+
+These tests directly answer the question:
+
+> At the same drug, dose, and time, is the response different between WT and mutant?
+
+Because sample numbers are very small, these results should be interpreted cautiously.
+
+```{r direct-genotype-tests}
+direct_tests <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  group_by(flow_time, treat, dosage, dose_nM) %>%
+  group_modify(~ {
+    dat <- .x
+    wt_vals  <- dat %>% filter(npm1_genot == "WT")  %>% pull(rel_p_syk)
+    mut_vals <- dat %>% filter(npm1_genot == "mut") %>% pull(rel_p_syk)
+
+    if (length(unique(dat$npm1_genot)) < 2) {
+      return(tibble(
+        test = NA_character_, p_value = NA_real_,
+        median_wt = median(wt_vals, na.rm = TRUE),
+        median_mut = median(mut_vals, na.rm = TRUE),
+        effect_mut_minus_wt = median(mut_vals, na.rm = TRUE) - median(wt_vals, na.rm = TRUE)
+      ))
+    }
+
+    wt <- wilcox.test(rel_p_syk ~ npm1_genot, data = dat, exact = TRUE)
+
+    tibble(
+      test = "Wilcoxon rank-sum",
+      p_value = wt$p.value,
+      median_wt = median(wt_vals, na.rm = TRUE),
+      median_mut = median(mut_vals, na.rm = TRUE),
+      effect_mut_minus_wt = median(mut_vals, na.rm = TRUE) - median(wt_vals, na.rm = TRUE),
+      effect_inhibition_mut_minus_wt = median(1 - mut_vals, na.rm = TRUE) - median(1 - wt_vals, na.rm = TRUE)
+    )
+  }) %>%
+  ungroup() %>%
+  mutate(
+    p_adj_bh = p.adjust(p_value, method = "BH"),
+    interpretation = case_when(
+      effect_mut_minus_wt < 0 ~ "mut lower rel_p_syk (stronger inhibition)",
+      effect_mut_minus_wt > 0 ~ "WT lower rel_p_syk",
+      TRUE ~ "no median difference"
+    )
+  ) %>%
+  arrange(flow_time, treat, dose_nM)
+
+direct_tests
+write.csv(direct_tests, file.path("results", "tables", "fig6_pa_direct_between_genotype_tests.csv"), row.names = FALSE)
+```
+
+# AUC-based sensitivity analysis
+
+For each sample, drug, and time, we compute the area under the dose-response curve.
+
+Interpretation:
+
+-   **Lower AUC of relative pSYK** = stronger inhibition across the dose range.
+-   **Higher AUC of inhibition** = stronger inhibition across the dose range.
+
+```{r compute-auc}
+auc_tbl <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  arrange(flow_time, treat, npm1_genot, sample_id, dose_nM) %>%
+  group_by(flow_time, treat, npm1_genot, sample_id, sample_key) %>%
+  summarise(
+    auc_rel_p_syk = pracma::trapz(dose_nM, rel_p_syk),
+    auc_inhibition = pracma::trapz(dose_nM, inhibition),
+    mean_rel_p_syk = mean(rel_p_syk, na.rm = TRUE),
+    mean_inhibition = mean(inhibition, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+auc_tbl
+write.csv(auc_tbl, file.path("results", "tables", "fig6_pa_auc_by_sample.csv"), row.names = FALSE)
+```
+
+# Direct genotype tests on AUC
+
+```{r auc-tests}
+auc_tests <- auc_tbl %>%
+  group_by(flow_time, treat) %>%
+  group_modify(~ {
+    dat <- .x
+    wt_auc  <- dat %>% filter(npm1_genot == "WT")  %>% pull(auc_rel_p_syk)
+    mut_auc <- dat %>% filter(npm1_genot == "mut") %>% pull(auc_rel_p_syk)
+
+    wt <- wilcox.test(auc_rel_p_syk ~ npm1_genot, data = dat, exact = TRUE)
+
+    tibble(
+      test = "Wilcoxon rank-sum on AUC",
+      p_value = wt$p.value,
+      median_auc_wt = median(wt_auc, na.rm = TRUE),
+      median_auc_mut = median(mut_auc, na.rm = TRUE),
+      effect_mut_minus_wt = median(mut_auc, na.rm = TRUE) - median(wt_auc, na.rm = TRUE),
+      interpretation = if_else(
+        median(mut_auc, na.rm = TRUE) < median(wt_auc, na.rm = TRUE),
+        "mut lower AUC (greater sensitivity)",
+        "WT lower AUC"
+      )
+    )
+  }) %>%
+  ungroup() %>%
+  mutate(p_adj_bh = p.adjust(p_value, method = "BH"))
+
+auc_tests
+write.csv(auc_tests, file.path("results", "tables", "fig6_pa_auc_between_genotype_tests.csv"), row.names = FALSE)
+```
+
+# Plot 3: AUC summary figure
+
+```{r plot-auc, fig.width=8, fig.height=5}
+p_auc <- auc_tbl %>%
+  ggplot(aes(x = npm1_genot, y = auc_rel_p_syk, color = npm1_genot)) +
+  geom_jitter(width = 0.08, size = 2.8) +
+  geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.15) +
+  facet_grid(flow_time ~ treat, scales = "free_y") +
+  labs(
+    title = "Figure 6A: genotype comparison using AUC",
+    x = "NPM1 genotype",
+    y = "AUC of relative pSYK across dose range",
+    color = "NPM1"
+  ) +
+  theme_classic(base_size = 12)
+
+p_auc
+
+ggsave(file.path("results", "figures", "fig6_pa_auc_plot.png"), p_auc, width = 8, height = 5, dpi = 300)
+```
+
+# Optional: paired WT vs mutant analysis
+
+Only run this if there is a real biological pairing variable, for example matched samples, plates, or experiments. The current sheet does **not** contain such a variable.
+
+```{r paired-template, eval=FALSE}
+# Example only if you later add a real pair_id column.
+paired_tests <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  group_by(flow_time, treat, dosage, pair_id) %>%
+  summarise(
+    wt = rel_p_syk[npm1_genot == "WT"],
+    mut = rel_p_syk[npm1_genot == "mut"],
+    .groups = "drop"
+  ) %>%
+  group_by(flow_time, treat, dosage) %>%
+  group_modify(~ tidy(wilcox.test(.x$wt, .x$mut, paired = TRUE, alternative = "greater")))
+```
+
+# Mixed-effects model
+
+This is the strongest pooled analysis if you accept the inferred sample IDs. It asks whether the response pattern differs by genotype across dose, drug, and time.
+
+```{r mixed-model}
+model_df <- fig6_with_id %>%
+  filter(treat != "UT") %>%
+  mutate(
+    log10_dose_nM = log10(dose_nM),
+    flow_time_f = factor(flow_time)
+  )
+
+fit <- lmer(
+  log2_rel_p_syk ~ npm1_genot * treat * log10_dose_nM * flow_time_f + (1 | sample_key),
+  data = model_df
+)
+
+anova_fit <- anova(fit)
+coef_fit  <- broom.mixed::tidy(fit, effects = "fixed")
+
+anova_fit
+coef_fit
+
+write.csv(as.data.frame(anova_fit), file.path("results", "tables", "fig6_pa_mixed_model_anova.csv"))
+write.csv(coef_fit, file.path("results", "tables", "fig6_pa_mixed_model_coefficients.csv"), row.names = FALSE)
+```
+
+# Estimated genotype contrasts from the model
+
+```{r emmeans-contrasts}
+emm <- emmeans(
+  fit,
+  ~ npm1_genot | treat + flow_time_f + log10_dose_nM,
+  at = list(log10_dose_nM = log10(sort(unique(model_df$dose_nM))))
+)
+
+emm_contrasts <- contrast(emm, method = "pairwise") %>%
+  summary(infer = TRUE)
+
+emm_contrasts
+write.csv(as.data.frame(emm_contrasts), file.path("results", "tables", "fig6_pa_emmeans_contrasts.csv"), row.names = FALSE)
+```
+
+# Publication-oriented compact figure
+
+This figure combines the main dose-response view and the AUC summary.
+
+```{r combined-figure, fig.width=12, fig.height=9}
+p_compact <- p_dose / p_auc + plot_layout(heights = c(2, 1))
+p_compact
+
+ggsave(file.path("results", "figures", "fig6_pa_compact_publication_style.png"), p_compact, width = 12, height = 9, dpi = 300)
+```
+
+# Suggested interpretation notes
+
+```{r interpretation-notes, results='asis'}
+cat("\n")
+cat("- A lower relative pSYK value indicates stronger SYK inhibition.\n")
+cat("- Direct between-genotype tests answer the main biological claim more directly than within-group versus UT tests.\n")
+cat("- AUC provides one summary sensitivity value per sample and is easier to compare between genotypes.\n")
+cat("- Because panel A appears to contain only two inferred samples per genotype per timepoint, all p-values should be interpreted cautiously. Effect size and visual consistency matter more here than nominal significance.\n")
+cat("- If true sample IDs become available, replace the inferred sample reconstruction with the real IDs before final analysis.\n")
+```
