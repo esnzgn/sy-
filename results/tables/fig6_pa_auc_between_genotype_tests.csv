@@ -1,0 +1,5 @@
+"flow_time","treat","test","p_value","median_auc_wt","median_auc_mut","effect_mut_minus_wt","interpretation","p_adj_bh"
+2,"ENTO","Wilcoxon rank-sum on AUC",0.333333333333333,18.95775,8.7455,-10.21225,"mut lower AUC (greater sensitivity)",0.666666666666667
+2,"LANRA","Wilcoxon rank-sum on AUC",0.666666666666667,14.6255,6.9765,-7.649,"mut lower AUC (greater sensitivity)",0.666666666666667
+24,"ENTO","Wilcoxon rank-sum on AUC",0.666666666666667,3233,2511.6,-721.4,"mut lower AUC (greater sensitivity)",0.666666666666667
+24,"LANRA","Wilcoxon rank-sum on AUC",0.666666666666667,2154.8,1186.8,-968,"mut lower AUC (greater sensitivity)",0.666666666666667

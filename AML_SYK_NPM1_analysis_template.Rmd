@@ -133,13 +133,13 @@ fig6_pa %>% count(flow_time, treat, npm1_genot, dosage)
 
 # Reconstruct sample IDs
 
-There is **no explicit sample ID column** in this sheet. To calculate per-sample dose-response curves and AUC, we need one. The code below reconstructs a `sample_id` under the following assumption:
+There is **no explicit sample ID column** in this sheet. To calculate per-sample dose-response curves and AUC, I need one. The code below reconstructs a `sample_id` under the following assumption:
 
 -   within each `flow_time × npm1_genot × treat` block,
 -   observations are ordered by sample,
 -   and each sample contributes one value per dose.
 
-For example, for `ENTO` at 2 h in `WT`, the first 3 doses are assumed to belong to sample 1 and the next 3 doses to sample 2.
+For example, for `ENTO` at 2 hour flow read in `WT` genotype, the first 3 doses are assumed to belong to sample 1 and the next 3 doses to sample 2.
 
 ```{r reconstruct-sample-id}
 # Number of non-zero doses within each time/treat block
@@ -179,7 +179,7 @@ fig6_with_id %>%
 
 -   `inhibition = 1 - rel_p_syk`
 
-So larger inhibition means stronger drug response.
+So the larger inhibition the stronger drug response.
 
 ```{r add-inhibition}
 fig6_with_id <- fig6_with_id %>%
@@ -219,12 +219,22 @@ This is the clearest replacement for the current bar plot. It shows:
 -   and genotype-level median trend lines.
 
 ```{r plot-dose-response, fig.width=11, fig.height=6}
+# install.packages("ggh4x") # if needed
+library(ggh4x)
+
 p_dose <- fig6_with_id %>%
   filter(treat != "UT") %>%
   ggplot(aes(x = dose_nM, y = rel_p_syk, color = npm1_genot)) +
   geom_hline(yintercept = 1, linetype = "dotted", linewidth = 0.5) +
   geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
   geom_point(size = 2.4) +
+  geom_text(
+    aes(label = sprintf("%.2f", rel_p_syk)),
+    hjust = -0.15,
+    vjust = 0.3,
+    size = 3,
+    show.legend = FALSE
+  ) +
   stat_summary(
     aes(group = npm1_genot),
     fun = median,
@@ -238,19 +248,43 @@ p_dose <- fig6_with_id %>%
     size = 3.2,
     shape = 18
   ) +
-  facet_grid(flow_time ~ treat, scales = "free_x") +
-  scale_x_continuous(
-    trans = pseudo_log_trans(base = 10),
-    breaks = c(1, 10, 30, 200, 1000, 5000),
-    labels = c("1", "10", "30", "200", "1000", "5000")
+  ggh4x::facet_grid2(
+    rows = vars(flow_time),
+    cols = vars(treat),
+    scales = "free_x",
+    independent = "x",
+    labeller = labeller(
+      flow_time = function(x) paste0(x, " h"),
+      treat = label_value
+    )
+  ) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      flow_time == 2 ~ scale_x_continuous(
+        trans = pseudo_log_trans(base = 10),
+        breaks = c(1, 10, 30),
+        labels = c("1", "10", "30"),
+        expand = expansion(mult = c(0.08, 0.25))
+      ),
+      flow_time == 24 ~ scale_x_continuous(
+        trans = pseudo_log_trans(base = 10),
+        breaks = c(200, 1000, 5000),
+        labels = c("200", "1000", "5000"),
+        expand = expansion(mult = c(0.08, 0.25))
+      )
+    )
   ) +
   labs(
     title = "Figure 6A: dose-response of relative pSYK by NPM1 genotype",
-    x = "Dose (nM)",
+    x = "Dose (uM)",
     y = "Relative pSYK (treated / untreated)",
     color = "NPM1"
   ) +
-  theme_classic(base_size = 12)
+  theme_classic(base_size = 12) +
+  theme(
+    panel.spacing.x = unit(1.1, "lines"),
+    panel.spacing.y = unit(1.1, "lines")
+  )
 
 p_dose
 
@@ -262,12 +296,22 @@ ggsave(file.path("results", "figures", "fig6_pa_dose_response.png"), p_dose, wid
 Some readers find this easier to interpret because higher values mean stronger response.
 
 ```{r plot-inhibition, fig.width=11, fig.height=6}
+# install.packages("ggh4x") # if needed
+library(ggh4x)
+
 p_inhib <- fig6_with_id %>%
   filter(treat != "UT") %>%
   ggplot(aes(x = dose_nM, y = inhibition, color = npm1_genot)) +
   geom_hline(yintercept = 0, linetype = "dotted", linewidth = 0.5) +
   geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
   geom_point(size = 2.4) +
+    geom_text(
+    aes(label = sprintf("%.2f", rel_p_syk)),
+    hjust = -0.15,
+    vjust = 0.3,
+    size = 3,
+    show.legend = FALSE
+  ) +
   stat_summary(
     aes(group = npm1_genot),
     fun = median,
@@ -281,19 +325,44 @@ p_inhib <- fig6_with_id %>%
     size = 3.2,
     shape = 18
   ) +
-  facet_grid(flow_time ~ treat, scales = "free_x") +
-  scale_x_continuous(
-    trans = pseudo_log_trans(base = 10),
-    breaks = c(1, 10, 30, 200, 1000, 5000),
-    labels = c("1", "10", "30", "200", "1000", "5000")
+    ggh4x::facet_grid2(
+    rows = vars(flow_time),
+    cols = vars(treat),
+    scales = "free_x",
+    independent = "x",
+    labeller = labeller(
+      flow_time = function(x) paste0(x, " h"),
+      treat = label_value
+    )
+  ) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      flow_time == 2 ~ scale_x_continuous(
+        trans = pseudo_log_trans(base = 10),
+        breaks = c(1, 10, 30),
+        labels = c("1", "10", "30"),
+        expand = expansion(mult = c(0.08, 0.25))
+      ),
+      flow_time == 24 ~ scale_x_continuous(
+        trans = pseudo_log_trans(base = 10),
+        breaks = c(200, 1000, 5000),
+        labels = c("200", "1000", "5000"),
+        expand = expansion(mult = c(0.08, 0.25))
+      )
+    )
   ) +
   labs(
     title = "Figure 6A: inhibition view of pSYK response",
-    x = "Dose (nM)",
+    x = "Dose (uM)",
     y = "Inhibition = 1 - relative pSYK",
     color = "NPM1"
   ) +
-  theme_classic(base_size = 12)
+  theme_classic(base_size = 12) +
+  theme(
+    panel.spacing.x = unit(1.1, "lines"),
+    panel.spacing.y = unit(1.1, "lines"),
+    strip.placement = "outside"
+  )
 
 p_inhib
 
@@ -302,7 +371,7 @@ ggsave(file.path("results", "figures", "fig6_pa_inhibition_response.png"), p_inh
 
 # Direct between-genotype statistics at matched conditions
 
-These tests directly answer the question:
+I design this chuck to test directly and answer the question:
 
 > At the same drug, dose, and time, is the response different between WT and mutant?
 
@@ -431,24 +500,6 @@ p_auc
 ggsave(file.path("results", "figures", "fig6_pa_auc_plot.png"), p_auc, width = 8, height = 5, dpi = 300)
 ```
 
-# Optional: paired WT vs mutant analysis
-
-Only run this if there is a real biological pairing variable, for example matched samples, plates, or experiments. The current sheet does **not** contain such a variable.
-
-```{r paired-template, eval=FALSE}
-# Example only if you later add a real pair_id column.
-paired_tests <- fig6_with_id %>%
-  filter(treat != "UT") %>%
-  group_by(flow_time, treat, dosage, pair_id) %>%
-  summarise(
-    wt = rel_p_syk[npm1_genot == "WT"],
-    mut = rel_p_syk[npm1_genot == "mut"],
-    .groups = "drop"
-  ) %>%
-  group_by(flow_time, treat, dosage) %>%
-  group_modify(~ tidy(wilcox.test(.x$wt, .x$mut, paired = TRUE, alternative = "greater")))
-```
-
 # Mixed-effects model
 
 This is the strongest pooled analysis if you accept the inferred sample IDs. It asks whether the response pattern differs by genotype across dose, drug, and time.
@@ -476,22 +527,6 @@ write.csv(as.data.frame(anova_fit), file.path("results", "tables", "fig6_pa_mixe
 write.csv(coef_fit, file.path("results", "tables", "fig6_pa_mixed_model_coefficients.csv"), row.names = FALSE)
 ```
 
-# Estimated genotype contrasts from the model
-
-```{r emmeans-contrasts}
-emm <- emmeans(
-  fit,
-  ~ npm1_genot | treat + flow_time_f + log10_dose_nM,
-  at = list(log10_dose_nM = log10(sort(unique(model_df$dose_nM))))
-)
-
-emm_contrasts <- contrast(emm, method = "pairwise") %>%
-  summary(infer = TRUE)
-
-emm_contrasts
-write.csv(as.data.frame(emm_contrasts), file.path("results", "tables", "fig6_pa_emmeans_contrasts.csv"), row.names = FALSE)
-```
-
 # Publication-oriented compact figure
 
 This figure combines the main dose-response view and the AUC summary.
@@ -513,3 +548,5 @@ cat("- AUC provides one summary sensitivity value per sample and is easier to co
 cat("- Because panel A appears to contain only two inferred samples per genotype per timepoint, all p-values should be interpreted cautiously. Effect size and visual consistency matter more here than nominal significance.\n")
 cat("- If true sample IDs become available, replace the inferred sample reconstruction with the real IDs before final analysis.\n")
 ```
+
+
