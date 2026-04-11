@@ -288,7 +288,7 @@ p_dose <- fig6_with_id %>%
 
 p_dose
 
-ggsave(file.path("results", "figures", "fig6_pa_dose_response.png"), p_dose, width = 11, height = 6, dpi = 300)
+ggsave(file.path("./results/figures/", "fig6_pa_dose_response11_6_.png"), p_dose, width = 11, height = 6, dpi = 300)
 ```
 
 # Plot 2: same data as inhibition
@@ -534,6 +534,8 @@ This figure combines the main dose-response view and the AUC summary.
 ```{r combined-figure, fig.width=12, fig.height=9}
 p_compact <- p_dose / p_auc + plot_layout(heights = c(2, 1))
 p_compact
+
+p_compact_2 <- p_dose / p_inhib
 
 ggsave(file.path("results", "figures", "fig6_pa_compact_publication_style.png"), p_compact, width = 12, height = 9, dpi = 300)
 ```
