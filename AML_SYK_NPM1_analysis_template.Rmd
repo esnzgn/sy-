@@ -42,9 +42,9 @@ for (pkg in setdiff(required_pkgs, installed)) {
 
 invisible(lapply(required_pkgs, library, character.only = TRUE))
 
-# params = list(
-#   excel_file = "../data/MS Figure data_4.7.2026.xlsx",
-#   output_dir = "results" )
+params = list(
+  excel_file = "../data/MS Figure data_4.7.2026.xlsx",
+  output_dir = "results" )
 
 dir.create(params$output_dir, showWarnings = FALSE, recursive = TRUE)
 ```
@@ -226,28 +226,32 @@ p_dose <- fig6_with_id %>%
   filter(treat != "UT") %>%
   ggplot(aes(x = dose_nM, y = rel_p_syk, color = npm1_genot)) +
   geom_hline(yintercept = 1, linetype = "dotted", linewidth = 0.5) +
-  geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
-  geom_point(size = 2.4) +
-  geom_text(
-    aes(label = sprintf("%.2f", rel_p_syk)),
-    hjust = -0.15,
-    vjust = 0.3,
-    size = 3,
-    show.legend = FALSE
+  
+  # Sample lines
+  geom_line(
+    aes(group = interaction(sample_key, treat), linetype = "Sample"),
+    alpha = 0.35, linewidth = 0.7
   ) +
+  
+  # Sample points
+  geom_point(aes(shape = "Sample"), size = 2.4) +
+  
+  # Median line
   stat_summary(
-    aes(group = npm1_genot),
+    aes(group = npm1_genot, linetype = "Median"),
     fun = median,
     geom = "line",
     linewidth = 1.2
   ) +
+  
+  # Median point
   stat_summary(
-    aes(group = npm1_genot),
+    aes(group = npm1_genot, shape = "Median"),
     fun = median,
     geom = "point",
-    size = 3.2,
-    shape = 18
+    size = 3.2
   ) +
+  
   ggh4x::facet_grid2(
     rows = vars(flow_time),
     cols = vars(treat),
@@ -258,6 +262,7 @@ p_dose <- fig6_with_id %>%
       treat = label_value
     )
   ) +
+  
   ggh4x::facetted_pos_scales(
     x = list(
       flow_time == 2 ~ scale_x_continuous(
@@ -274,16 +279,28 @@ p_dose <- fig6_with_id %>%
       )
     )
   ) +
+  
+  geom_text(
+    aes(
+      label = sprintf("%.2f", rel_p_syk),
+      color = after_scale(scales::alpha(colour, 1))
+    ),
+    position = position_jitter(width = 0.1, height = 0.3),
+    hjust = -0.15,
+    vjust = 0.3,
+    size = 3,
+    show.legend = FALSE
+  ) +
+  scale_shape_manual(
+    name = "Point type",
+    values = c("Sample" = 16, "Median" = 18)
+  ) +
+  
   labs(
     title = "Figure 6A: dose-response of relative pSYK by NPM1 genotype",
     x = "Dose (uM)",
     y = "Relative pSYK (treated / untreated)",
     color = "NPM1"
-  ) +
-  theme_classic(base_size = 12) +
-  theme(
-    panel.spacing.x = unit(1.1, "lines"),
-    panel.spacing.y = unit(1.1, "lines")
   )
 
 p_dose
@@ -303,29 +320,41 @@ p_inhib <- fig6_with_id %>%
   filter(treat != "UT") %>%
   ggplot(aes(x = dose_nM, y = inhibition, color = npm1_genot)) +
   geom_hline(yintercept = 0, linetype = "dotted", linewidth = 0.5) +
-  geom_line(aes(group = interaction(sample_key, treat)), alpha = 0.35, linewidth = 0.7) +
-  geom_point(size = 2.4) +
-    geom_text(
+  
+  # Sample lines
+  geom_line(
+    aes(group = interaction(sample_key, treat), linetype = "Sample"),
+    alpha = 0.35, linewidth = 0.7
+  ) +
+  
+  # Sample points
+  geom_point(aes(shape = "Sample"), size = 2.4) +
+  
+  geom_text(
     aes(label = sprintf("%.2f", rel_p_syk)),
     hjust = -0.15,
     vjust = 0.3,
     size = 3,
     show.legend = FALSE
   ) +
+  
+  # Median line
   stat_summary(
-    aes(group = npm1_genot),
+    aes(group = npm1_genot, linetype = "Median"),
     fun = median,
     geom = "line",
     linewidth = 1.2
   ) +
+  
+  # Median point
   stat_summary(
-    aes(group = npm1_genot),
+    aes(group = npm1_genot, shape = "Median"),
     fun = median,
     geom = "point",
-    size = 3.2,
-    shape = 18
+    size = 3.2
   ) +
-    ggh4x::facet_grid2(
+  
+  ggh4x::facet_grid2(
     rows = vars(flow_time),
     cols = vars(treat),
     scales = "free_x",
@@ -335,6 +364,7 @@ p_inhib <- fig6_with_id %>%
       treat = label_value
     )
   ) +
+  
   ggh4x::facetted_pos_scales(
     x = list(
       flow_time == 2 ~ scale_x_continuous(
@@ -351,17 +381,22 @@ p_inhib <- fig6_with_id %>%
       )
     )
   ) +
+  
+  # Legend definitions
+  scale_linetype_manual(
+    name = "Line type",
+    values = c("Sample" = "solid", "Median" = "solid")
+  ) +
+  scale_shape_manual(
+    name = "Point type",
+    values = c("Sample" = 16, "Median" = 18)
+  ) +
+  
   labs(
     title = "Figure 6A: inhibition view of pSYK response",
     x = "Dose (uM)",
     y = "Inhibition = 1 - relative pSYK",
     color = "NPM1"
-  ) +
-  theme_classic(base_size = 12) +
-  theme(
-    panel.spacing.x = unit(1.1, "lines"),
-    panel.spacing.y = unit(1.1, "lines"),
-    strip.placement = "outside"
   )
 
 p_inhib
@@ -369,186 +404,29 @@ p_inhib
 ggsave(file.path("results", "figures", "fig6_pa_inhibition_response.png"), p_inhib, width = 11, height = 6, dpi = 300)
 ```
 
-# Direct between-genotype statistics at matched conditions
-
-I design this chuck to test directly and answer the question:
-
-> At the same drug, dose, and time, is the response different between WT and mutant?
-
-Because sample numbers are very small, these results should be interpreted cautiously.
-
-```{r direct-genotype-tests}
-direct_tests <- fig6_with_id %>%
-  filter(treat != "UT") %>%
-  group_by(flow_time, treat, dosage, dose_nM) %>%
-  group_modify(~ {
-    dat <- .x
-    wt_vals  <- dat %>% filter(npm1_genot == "WT")  %>% pull(rel_p_syk)
-    mut_vals <- dat %>% filter(npm1_genot == "mut") %>% pull(rel_p_syk)
-
-    if (length(unique(dat$npm1_genot)) < 2) {
-      return(tibble(
-        test = NA_character_, p_value = NA_real_,
-        median_wt = median(wt_vals, na.rm = TRUE),
-        median_mut = median(mut_vals, na.rm = TRUE),
-        effect_mut_minus_wt = median(mut_vals, na.rm = TRUE) - median(wt_vals, na.rm = TRUE)
-      ))
-    }
-
-    wt <- wilcox.test(rel_p_syk ~ npm1_genot, data = dat, exact = TRUE)
-
-    tibble(
-      test = "Wilcoxon rank-sum",
-      p_value = wt$p.value,
-      median_wt = median(wt_vals, na.rm = TRUE),
-      median_mut = median(mut_vals, na.rm = TRUE),
-      effect_mut_minus_wt = median(mut_vals, na.rm = TRUE) - median(wt_vals, na.rm = TRUE),
-      effect_inhibition_mut_minus_wt = median(1 - mut_vals, na.rm = TRUE) - median(1 - wt_vals, na.rm = TRUE)
-    )
-  }) %>%
-  ungroup() %>%
-  mutate(
-    p_adj_bh = p.adjust(p_value, method = "BH"),
-    interpretation = case_when(
-      effect_mut_minus_wt < 0 ~ "mut lower rel_p_syk (stronger inhibition)",
-      effect_mut_minus_wt > 0 ~ "WT lower rel_p_syk",
-      TRUE ~ "no median difference"
-    )
-  ) %>%
-  arrange(flow_time, treat, dose_nM)
-
-direct_tests
-write.csv(direct_tests, file.path("results", "tables", "fig6_pa_direct_between_genotype_tests.csv"), row.names = FALSE)
-```
-
-# AUC-based sensitivity analysis
-
-For each sample, drug, and time, we compute the area under the dose-response curve.
-
-Interpretation:
-
--   **Lower AUC of relative pSYK** = stronger inhibition across the dose range.
--   **Higher AUC of inhibition** = stronger inhibition across the dose range.
-
-```{r compute-auc}
-auc_tbl <- fig6_with_id %>%
-  filter(treat != "UT") %>%
-  arrange(flow_time, treat, npm1_genot, sample_id, dose_nM) %>%
-  group_by(flow_time, treat, npm1_genot, sample_id, sample_key) %>%
-  summarise(
-    auc_rel_p_syk = pracma::trapz(dose_nM, rel_p_syk),
-    auc_inhibition = pracma::trapz(dose_nM, inhibition),
-    mean_rel_p_syk = mean(rel_p_syk, na.rm = TRUE),
-    mean_inhibition = mean(inhibition, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-auc_tbl
-write.csv(auc_tbl, file.path("results", "tables", "fig6_pa_auc_by_sample.csv"), row.names = FALSE)
-```
-
-# Direct genotype tests on AUC
-
-```{r auc-tests}
-auc_tests <- auc_tbl %>%
-  group_by(flow_time, treat) %>%
-  group_modify(~ {
-    dat <- .x
-    wt_auc  <- dat %>% filter(npm1_genot == "WT")  %>% pull(auc_rel_p_syk)
-    mut_auc <- dat %>% filter(npm1_genot == "mut") %>% pull(auc_rel_p_syk)
-
-    wt <- wilcox.test(auc_rel_p_syk ~ npm1_genot, data = dat, exact = TRUE)
-
-    tibble(
-      test = "Wilcoxon rank-sum on AUC",
-      p_value = wt$p.value,
-      median_auc_wt = median(wt_auc, na.rm = TRUE),
-      median_auc_mut = median(mut_auc, na.rm = TRUE),
-      effect_mut_minus_wt = median(mut_auc, na.rm = TRUE) - median(wt_auc, na.rm = TRUE),
-      interpretation = if_else(
-        median(mut_auc, na.rm = TRUE) < median(wt_auc, na.rm = TRUE),
-        "mut lower AUC (greater sensitivity)",
-        "WT lower AUC"
-      )
-    )
-  }) %>%
-  ungroup() %>%
-  mutate(p_adj_bh = p.adjust(p_value, method = "BH"))
-
-auc_tests
-write.csv(auc_tests, file.path("results", "tables", "fig6_pa_auc_between_genotype_tests.csv"), row.names = FALSE)
-```
-
-# Plot 3: AUC summary figure
-
-```{r plot-auc, fig.width=8, fig.height=5}
-p_auc <- auc_tbl %>%
-  ggplot(aes(x = npm1_genot, y = auc_rel_p_syk, color = npm1_genot)) +
-  geom_jitter(width = 0.08, size = 2.8) +
-  geom_boxplot(width = 0.45, outlier.shape = NA, alpha = 0.15) +
-  facet_grid(flow_time ~ treat, scales = "free_y") +
-  labs(
-    title = "Figure 6A: genotype comparison using AUC",
-    x = "NPM1 genotype",
-    y = "AUC of relative pSYK across dose range",
-    color = "NPM1"
-  ) +
-  theme_classic(base_size = 12)
-
-p_auc
-
-ggsave(file.path("results", "figures", "fig6_pa_auc_plot.png"), p_auc, width = 8, height = 5, dpi = 300)
-```
-
-# Mixed-effects model
-
-This is the strongest pooled analysis if you accept the inferred sample IDs. It asks whether the response pattern differs by genotype across dose, drug, and time.
-
-```{r mixed-model}
-model_df <- fig6_with_id %>%
-  filter(treat != "UT") %>%
-  mutate(
-    log10_dose_nM = log10(dose_nM),
-    flow_time_f = factor(flow_time)
-  )
-
-fit <- lmer(
-  log2_rel_p_syk ~ npm1_genot * treat * log10_dose_nM * flow_time_f + (1 | sample_key),
-  data = model_df
-)
-
-anova_fit <- anova(fit)
-coef_fit  <- broom.mixed::tidy(fit, effects = "fixed")
-
-anova_fit
-coef_fit
-
-write.csv(as.data.frame(anova_fit), file.path("results", "tables", "fig6_pa_mixed_model_anova.csv"))
-write.csv(coef_fit, file.path("results", "tables", "fig6_pa_mixed_model_coefficients.csv"), row.names = FALSE)
-```
-
 # Publication-oriented compact figure
 
 This figure combines the main dose-response view and the AUC summary.
 
 ```{r combined-figure, fig.width=12, fig.height=9}
-p_compact <- p_dose / p_auc + plot_layout(heights = c(2, 1))
-p_compact
+# p_compact <- p_dose / p_auc + plot_layout(heights = c(2, 1))
+# p_compact
 
 p_compact_2 <- p_dose / p_inhib
 
+p_compact_2
+
 ggsave(file.path("results", "figures", "fig6_pa_compact_publication_style.png"), p_compact, width = 12, height = 9, dpi = 300)
 ```
+
+
 
 # Suggested interpretation notes
 
 ```{r interpretation-notes, results='asis'}
 cat("\n")
 cat("- A lower relative pSYK value indicates stronger SYK inhibition.\n")
-cat("- Direct between-genotype tests answer the main biological claim more directly than within-group versus UT tests.\n")
-cat("- AUC provides one summary sensitivity value per sample and is easier to compare between genotypes.\n")
-cat("- Because panel A appears to contain only two inferred samples per genotype per timepoint, all p-values should be interpreted cautiously. Effect size and visual consistency matter more here than nominal significance.\n")
-cat("- If true sample IDs become available, replace the inferred sample reconstruction with the real IDs before final analysis.\n")
+
 ```
 
 
