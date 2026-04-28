@@ -14,10 +14,11 @@ library(circlize)
 library(grid)
 library(stringr)
 library(openxlsx)
+library(janitor)
 
-
-file_cell_death <- "../data/Z_patient_AMLCelldeath(SMi_div_aCD3)and(SMi+aPD1_div_aCD3).xlsx"
-file_tcell_prolif <- "../data/Z_patient_TcellProliferation(SMi_div_aCD3)and(SMi+aPD1_div_aCD3).xlsx"
+file_cell_death <- "./data/Z_patient_AMLCelldeath(SMi_div_aCD3)and(SMi+aPD1_div_aCD3).xlsx"
+file_tcell_prolif <- "./data/Z_patient_TcellProliferation(SMi_div_aCD3)and(SMi+aPD1_div_aCD3).xlsx"
+file_genetics <- "./data/AML v2_HEATMAP_GENETICS_04.27.2026.xlsx"
 
 read_heatmap_matrix <- function(file_path) {
   sh <- excel_sheets(file_path)[1]
@@ -38,25 +39,60 @@ read_heatmap_matrix <- function(file_path) {
   return(mat)
 }
 
-make_heatmap_drug_waterfall <- function(mat,
-                                        title = "Heatmap",
-                                        row_score_fun = function(x) mean(x, na.rm = TRUE),
-                                        na_col = "grey90") {
+read_npm1_metadata <- function(file_path) {
+  df <- read_excel(file_path, sheet = 1) %>%
+    janitor::clean_names()
   
-  # Row score = integrated drug effect across patients
+  df %>%
+    transmute(
+      patient_id = as.character(lab_specimen_id),
+      npm1_status = case_when(
+        npm1 == 100 ~ "NPM1 mutated",
+        npm1 == 1   ~ "NPM1 wildtype",
+        npm1 == 0   ~ "Unknown/untested",
+        TRUE        ~ "Unknown/untested"
+      )
+    )
+}
+
+make_heatmap_drug_patient_waterfall <- function(mat,
+                                                npm1_meta,
+                                                title = "Heatmap",
+                                                row_score_fun = function(x) median(x, na.rm = TRUE),
+                                                col_score_fun = function(x) median(x, na.rm = TRUE),
+                                                na_col = "grey90") {
+  
+  # Drug score = integrated drug effect across patients
   row_scores <- apply(mat, 1, row_score_fun)
-  
-  # Order rows from highest to lowest z-score summary
   row_order <- order(row_scores, decreasing = TRUE)
   
-  # Keep patient order as in the input file
-  col_order <- seq_len(ncol(mat))
+  # Patient score = integrated patient response across drugs
+  col_scores <- apply(mat, 2, col_score_fun)
+  col_order <- seq_len(ncol(mat))   # keep original patient order
   
   mat_ord <- mat[row_order, col_order, drop = FALSE]
   row_scores_ord <- row_scores[row_order]
+  col_scores_ord <- col_scores[col_order]
   
-  # Bar range
-  max_abs_score <- max(abs(row_scores_ord), na.rm = TRUE)
+  patient_ids_ord <- colnames(mat_ord)
+  
+  npm1_status_ord <- npm1_meta %>%
+    filter(patient_id %in% patient_ids_ord) %>%
+    right_join(
+      tibble(patient_id = patient_ids_ord),
+      by = "patient_id"
+    ) %>%
+    mutate(
+      npm1_status = ifelse(is.na(npm1_status), "Unknown/untested", npm1_status),
+      npm1_status = factor(
+        npm1_status,
+        levels = c("NPM1 mutated", "NPM1 wildtype", "Unknown/untested")
+      )
+    ) %>%
+    pull(npm1_status)
+  
+  # Shared range for drug and patient waterfall axes
+  max_abs_score <- max(abs(c(row_scores_ord, col_scores_ord)), na.rm = TRUE)
   if (max_abs_score == 0) max_abs_score <- 1
   
   # Heatmap colors
@@ -65,17 +101,23 @@ make_heatmap_drug_waterfall <- function(mat,
     c("#2c7fb8", "#7fcdbb", "#c7e9b4", "#fdae61", "#d7191c")
   )
   
-  # Drug waterfall colors
-  bar_col_fun <- colorRamp2(
+  # Drug waterfall colors by median z-score
+  drug_bar_col_fun <- colorRamp2(
     c(-max_abs_score, 0, max_abs_score),
     c("#2c7fb8", "grey80", "#d7191c")
   )
   
-  # Right-side drug waterfall only
+  # Patient waterfall colors by NPM1 mutation status
+  npm1_cols <- c(
+    "NPM1 mutated" = "#17b3b7",
+    "NPM1 wildtype" = "grey70",
+    "Unknown/untested" = "white"
+  )
+  
   right_ha <- rowAnnotation(
-    `Drug mean` = anno_barplot(
+    `Drug median` = anno_barplot(
       row_scores_ord,
-      gp = gpar(fill = bar_col_fun(row_scores_ord), col = NA),
+      gp = gpar(fill = drug_bar_col_fun(row_scores_ord), col = NA),
       border = FALSE,
       width = unit(3.5, "cm"),
       ylim = c(-max_abs_score, max_abs_score),
@@ -90,6 +132,25 @@ make_heatmap_drug_waterfall <- function(mat,
     annotation_name_gp = gpar(fontsize = 10, fontface = "bold")
   )
   
+  bottom_ha <- HeatmapAnnotation(
+    `Patient median` = anno_barplot(
+      col_scores_ord,
+      gp = gpar(fill = npm1_cols[as.character(npm1_status_ord)], col = "black", lwd = 0.2),
+      border = FALSE,
+      height = unit(2.2, "cm"),
+      ylim = c(-max_abs_score, max_abs_score),
+      axis_param = list(
+        side = "left",
+        at = c(-max_abs_score, 0, max_abs_score),
+        labels_rot = 0
+      ),
+      bar_width = 0.85
+    ),
+    annotation_name_side = "left",
+    annotation_name_gp = gpar(fontsize = 10, fontface = "bold"),
+    which = "column"
+  )
+  
   ht <- Heatmap(
     mat_ord,
     name = "Z-Score",
@@ -98,15 +159,11 @@ make_heatmap_drug_waterfall <- function(mat,
     
     cell_fun = function(j, i, x, y, width, height, fill) {
       val <- mat_ord[i, j]
-      
-      if (!is.na(val) && val > 0.5) {
+      if (!is.na(val) && val > 0) {
         grid.text(
           sprintf("%.1f", val),
           x, y,
-          gp = gpar(
-            fontsize = 6,
-            col = ifelse(val > 1, "white", "black")
-          )
+          gp = gpar(fontsize = 5.5, col = "black")
         )
       }
     },
@@ -124,6 +181,7 @@ make_heatmap_drug_waterfall <- function(mat,
     column_names_gp = gpar(fontsize = 7),
     
     right_annotation = right_ha,
+    bottom_annotation = bottom_ha,
     
     column_title = title,
     column_title_gp = gpar(fontsize = 12, fontface = "bold"),
@@ -136,15 +194,25 @@ make_heatmap_drug_waterfall <- function(mat,
     rect_gp = gpar(col = "white", lwd = 0.5)
   )
   
+  npm1_legend <- Legend(
+    title = "NPM1",
+    labels = names(npm1_cols),
+    legend_gp = gpar(fill = npm1_cols)
+  )
+  
   return(list(
     heatmap = ht,
+    npm1_legend = npm1_legend,
     matrix_ordered = mat_ord,
-    row_scores = row_scores_ord
+    row_scores = row_scores_ord,
+    col_scores = col_scores_ord,
+    npm1_status = npm1_status_ord
   ))
 }
 
 mat_cell_death <- read_heatmap_matrix(file_cell_death)
 mat_tcell_prolif <- read_heatmap_matrix(file_tcell_prolif)
+npm1_meta <- read_npm1_metadata(file_genetics)
 
 dim(mat_cell_death)
 dim(mat_tcell_prolif)
@@ -152,22 +220,25 @@ dim(mat_tcell_prolif)
 head(mat_cell_death[, 1:5])
 head(mat_tcell_prolif[, 1:5])
 
-res_cell_death <- make_heatmap_drug_waterfall(
+res_cell_death <- make_heatmap_drug_patient_waterfall(
   mat = mat_cell_death,
+  npm1_meta = npm1_meta,
   title = "AML Cell Death"
 )
 
 draw(
   res_cell_death$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_cell_death$npm1_legend)
 )
 
-pdf("AML_CellDeath_heatmap_with_waterfalls.pdf", width = 10, height = 12)
+pdf("AML_CellDeath_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 12)
 draw(
   res_cell_death$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_cell_death$npm1_legend)
 )
 dev.off()
 
@@ -175,26 +246,30 @@ png("AML_CellDeath_heatmap_with_waterfalls.png", width = 2200, height = 2600, re
 draw(
   res_cell_death$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_cell_death$npm1_legend)
 )
 dev.off()
 
-res_tcell_prolif <- make_heatmap_drug_waterfall(
+res_tcell_prolif <- make_heatmap_drug_patient_waterfall(
   mat = mat_tcell_prolif,
+  npm1_meta = npm1_meta,
   title = "T-cell Proliferation"
 )
 
 draw(
   res_tcell_prolif$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_tcell_prolif$npm1_legend)
 )
 
-pdf("Tcell_Proliferation_heatmap_with_waterfalls.pdf", width = 10, height = 12)
+pdf("Tcell_Proliferation_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 12)
 draw(
   res_tcell_prolif$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_tcell_prolif$npm1_legend)
 )
 dev.off()
 
@@ -202,23 +277,22 @@ png("Tcell_Proliferation_heatmap_with_waterfalls.png", width = 2200, height = 26
 draw(
   res_tcell_prolif$heatmap,
   heatmap_legend_side = "right",
-  annotation_legend_side = "right"
+  annotation_legend_side = "right",
+  annotation_legend_list = list(res_tcell_prolif$npm1_legend)
 )
 dev.off()
 
 write.xlsx(
   list(
-    AML_CellDeath_DrugMeans = data.frame(
+    AML_CellDeath_Drugmedians = data.frame(
       Drug = rownames(res_cell_death$matrix_ordered),
-      MeanScore = res_cell_death$row_scores
+      medianScore = res_cell_death$row_scores
     ),
-    TcellProlif_DrugMeans = data.frame(
+    TcellProlif_Drugmedians = data.frame(
       Drug = rownames(res_tcell_prolif$matrix_ordered),
-      MeanScore = res_tcell_prolif$row_scores
+      medianScore = res_tcell_prolif$row_scores
     )
   ),
   file = "heatmap_drug_waterfall_summary_tables.xlsx",
   overwrite = TRUE
 )
-
-
