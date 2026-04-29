@@ -68,7 +68,9 @@ make_heatmap_drug_patient_waterfall <- function(mat,
   
   # Patient score = integrated patient response across drugs
   col_scores <- apply(mat, 2, col_score_fun)
-  col_order <- seq_len(ncol(mat))   # keep original patient order
+  
+  # Rank patients by median response, like drugs
+  col_order <- order(col_scores, decreasing = TRUE)
   
   mat_ord <- mat[row_order, col_order, drop = FALSE]
   row_scores_ord <- row_scores[row_order]
@@ -91,9 +93,20 @@ make_heatmap_drug_patient_waterfall <- function(mat,
     ) %>%
     pull(npm1_status)
   
-  # Shared range for drug and patient waterfall axes
-  max_abs_score <- max(abs(c(row_scores_ord, col_scores_ord)), na.rm = TRUE)
-  if (max_abs_score == 0) max_abs_score <- 1
+  # Separate scales:
+  # drug waterfall uses drug range
+  # patient waterfall uses patient range, so patient bars are not too short
+  # Use actual drug median range, so drug waterfall is scaled to drug effects
+  drug_min <- min(row_scores_ord, na.rm = TRUE)
+  drug_max <- max(row_scores_ord, na.rm = TRUE)
+  
+  # Small padding so bars do not touch the axis limits
+  drug_pad <- 0.05 * (drug_max - drug_min)
+  
+  drug_ylim <- c(drug_min - drug_pad, drug_max + drug_pad)
+  
+  max_abs_patient_score <- max(abs(col_scores_ord), na.rm = TRUE)
+  if (max_abs_patient_score == 0) max_abs_patient_score <- 1
   
   # Heatmap colors
   col_fun <- colorRamp2(
@@ -103,7 +116,7 @@ make_heatmap_drug_patient_waterfall <- function(mat,
   
   # Drug waterfall colors by median z-score
   drug_bar_col_fun <- colorRamp2(
-    c(-max_abs_score, 0, max_abs_score),
+    c(drug_min, 0, drug_max),
     c("#2c7fb8", "grey80", "#d7191c")
   )
   
@@ -113,6 +126,11 @@ make_heatmap_drug_patient_waterfall <- function(mat,
     "NPM1 wildtype" = "grey70",
     "Unknown/untested" = "white"
   )
+  #  only the plotted patient bars so positive values appear above baseline
+  col_scores_plot <- col_scores_ord
+  
+  patient_max_abs_score <- max(abs(col_scores_ord), na.rm = TRUE)
+  if (patient_max_abs_score == 0) patient_max_abs_score <- 1
   
   right_ha <- rowAnnotation(
     `Drug median` = anno_barplot(
@@ -120,10 +138,11 @@ make_heatmap_drug_patient_waterfall <- function(mat,
       gp = gpar(fill = drug_bar_col_fun(row_scores_ord), col = NA),
       border = FALSE,
       width = unit(3.5, "cm"),
-      ylim = c(-max_abs_score, max_abs_score),
+      ylim = drug_ylim,
       axis_param = list(
         side = "bottom",
-        at = c(-max_abs_score, 0, max_abs_score),
+        at = c(drug_min, 0, drug_max),
+        labels = round(c(drug_min, 0, drug_max), 2),
         labels_rot = 0
       ),
       bar_width = 0.85
@@ -132,18 +151,39 @@ make_heatmap_drug_patient_waterfall <- function(mat,
     annotation_name_gp = gpar(fontsize = 10, fontface = "bold")
   )
   
+  #  only the plotted patient bars so positive values appear above baseline
+  col_scores_plot <- col_scores_ord
+  
+  patient_min <- min(col_scores_ord, na.rm = TRUE)
+  patient_max <- max(col_scores_ord, na.rm = TRUE)
+  
+  patient_pad <- 0.05 * (patient_max - patient_min)
+  
+  if (patient_pad == 0) patient_pad <- 0.05
+  
+  patient_ylim <- c(patient_min - patient_pad, patient_max + patient_pad)
+  
   bottom_ha <- HeatmapAnnotation(
     `Patient median` = anno_barplot(
-      col_scores_ord,
-      gp = gpar(fill = npm1_cols[as.character(npm1_status_ord)], col = "black", lwd = 0.2),
+      col_scores_plot,
+      gp = gpar(
+        fill = npm1_cols[as.character(npm1_status_ord)],
+        col = "black",
+        lwd = 0.2
+      ),
       border = FALSE,
       height = unit(2.2, "cm"),
-      ylim = c(-max_abs_score, max_abs_score),
+      
+      # use actual patient bar range
+      ylim = patient_ylim,
+      
       axis_param = list(
         side = "left",
-        at = c(-max_abs_score, 0, max_abs_score),
+        at = c(patient_min, 0, patient_max),
+        labels = round(c(patient_min, 0, patient_max), 2),
         labels_rot = 0
       ),
+      
       bar_width = 0.85
     ),
     annotation_name_side = "left",
@@ -233,7 +273,7 @@ draw(
   annotation_legend_list = list(res_cell_death$npm1_legend)
 )
 
-pdf("AML_CellDeath_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 12)
+pdf("AML_CellDeath_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 6)
 draw(
   res_cell_death$heatmap,
   heatmap_legend_side = "right",
@@ -264,7 +304,7 @@ draw(
   annotation_legend_list = list(res_tcell_prolif$npm1_legend)
 )
 
-pdf("Tcell_Proliferation_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 12)
+pdf("Tcell_Proliferation_heatmap_with_drug_patient_waterfalls_NPM1.pdf", width = 10, height = 6)
 draw(
   res_tcell_prolif$heatmap,
   heatmap_legend_side = "right",
