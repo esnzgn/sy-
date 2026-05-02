@@ -336,3 +336,77 @@ write.xlsx(
   file = "heatmap_drug_waterfall_summary_tables.xlsx",
   overwrite = TRUE
 )
+
+
+read_mutation_matrix <- function(file_path) {
+  mut_df <- read_excel(file_path, sheet = 1) %>%
+    janitor::clean_names()
+  
+  patient_ids <- mut_df$lab_specimen_id
+  
+  mut_mat <- mut_df %>%
+    select(-lab_specimen_id) %>%
+    as.data.frame()
+  
+  rownames(mut_mat) <- patient_ids
+  
+  mut_mat <- as.matrix(mut_mat)
+  
+  # transpose: genes as rows, patients as columns
+  mut_mat <- t(mut_mat)
+  
+  mut_mat
+}
+
+mutation_mat <- read_mutation_matrix(file_genetics)
+
+mutation_col_fun <- c(
+  "100" = "#E64B35",  # mutation positive
+  "1"   = "#4DBBD5",  # mutation negative
+  "0"   = "#BDBDBD"   # unknown/untested
+)
+
+ht_mutations <- Heatmap(
+  as.character(mutation_mat),
+  name = "Mutation",
+  col = mutation_col_fun,
+  
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  show_row_dend = FALSE,
+  show_column_dend = FALSE,
+  
+  row_names_side = "left",
+  row_names_gp = gpar(fontsize = 8),
+  
+  column_names_side = "top",
+  column_names_rot = 45,
+  column_names_gp = gpar(fontsize = 7),
+  
+  column_title = "AML Mutation Matrix",
+  column_title_gp = gpar(fontsize = 12, fontface = "bold"),
+  
+  heatmap_legend_param = list(
+    title = "Mutation status",
+    at = c("100", "1", "0"),
+    labels = c(
+      "Positive",
+      "Negative",
+      "Unknown/untested"
+    )
+  ),
+  
+  rect_gp = gpar(col = "white", lwd = 0.5)
+)
+
+draw(ht_mutations, heatmap_legend_side = "right")
+
+pdf("AML_mutation_matrix_all_genes.pdf", width = 10, height = 8)
+draw(ht_mutations, heatmap_legend_side = "right")
+dev.off()
+
+png("AML_mutation_matrix_all_genes.png", width = 2400, height = 1800, res = 300)
+draw(ht_mutations, heatmap_legend_side = "right")
+dev.off()
+
+
