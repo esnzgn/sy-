@@ -97,16 +97,25 @@ make_heatmap_drug_patient_waterfall <- function(mat,
   # drug waterfall uses drug range
   # patient waterfall uses patient range, so patient bars are not too short
   # Use actual drug median range, so drug waterfall is scaled to drug effects
-  drug_min <- min(row_scores_ord, na.rm = TRUE)
-  drug_max <- max(row_scores_ord, na.rm = TRUE)
+  # Symmetric drug waterfall scale around zero
+  drug_max_abs <- max(abs(row_scores_ord), na.rm = TRUE)
+  if (drug_max_abs == 0) drug_max_abs <- 1
   
-  # Small padding so bars do not touch the axis limits
-  drug_pad <- 0.05 * (drug_max - drug_min)
+  drug_pad <- 0.05 * drug_max_abs
+  drug_ylim <- c(
+    -drug_max_abs - drug_pad,
+    drug_max_abs + drug_pad
+  )
   
-  drug_ylim <- c(drug_min - drug_pad, drug_max + drug_pad)
+  # Symmetric patient waterfall scale around zero
+  patient_max_abs <- max(abs(col_scores_ord), na.rm = TRUE)
+  if (patient_max_abs == 0) patient_max_abs <- 1
   
-  max_abs_patient_score <- max(abs(col_scores_ord), na.rm = TRUE)
-  if (max_abs_patient_score == 0) max_abs_patient_score <- 1
+  patient_pad <- 0.05 * patient_max_abs
+  patient_ylim <- c(
+    -patient_max_abs - patient_pad,
+    patient_max_abs + patient_pad
+  )
   
   # Heatmap colors
   col_fun <- colorRamp2(
@@ -141,8 +150,8 @@ make_heatmap_drug_patient_waterfall <- function(mat,
       ylim = drug_ylim,
       axis_param = list(
         side = "bottom",
-        at = c(drug_min, 0, drug_max),
-        labels = round(c(drug_min, 0, drug_max), 2),
+        at = c(-drug_max_abs, 0, drug_max_abs),
+        labels = round(c(-drug_max_abs, 0, drug_max_abs), 2),
         labels_rot = 0
       ),
       bar_width = 0.85
@@ -154,14 +163,14 @@ make_heatmap_drug_patient_waterfall <- function(mat,
   #  only the plotted patient bars so positive values appear above baseline
   col_scores_plot <- col_scores_ord
   
-  patient_min <- min(col_scores_ord, na.rm = TRUE)
-  patient_max <- max(col_scores_ord, na.rm = TRUE)
-  
-  patient_pad <- 0.05 * (patient_max - patient_min)
-  
-  if (patient_pad == 0) patient_pad <- 0.05
-  
-  patient_ylim <- c(patient_min - patient_pad, patient_max + patient_pad)
+  # patient_min <- min(col_scores_ord, na.rm = TRUE)
+  # patient_max <- max(col_scores_ord, na.rm = TRUE)
+  # 
+  # patient_pad <- 0.05 * (patient_max - patient_min)
+  # 
+  # if (patient_pad == 0) patient_pad <- 0.05
+  # 
+  # patient_ylim <- c(patient_min - patient_pad, patient_max + patient_pad)
   
   bottom_ha <- HeatmapAnnotation(
     `Patient median` = anno_barplot(
@@ -179,8 +188,8 @@ make_heatmap_drug_patient_waterfall <- function(mat,
       
       axis_param = list(
         side = "left",
-        at = c(patient_min, 0, patient_max),
-        labels = round(c(patient_min, 0, patient_max), 2),
+        at = c(-patient_max_abs, 0, patient_max_abs),
+        labels = round(c(-patient_max_abs, 0, patient_max_abs), 2),
         labels_rot = 0
       ),
       
