@@ -1,0 +1,5 @@
+drug,group,n,median,responders_gt_1_5,p_wilcoxon_vs_1_greater
+Entospletinib,Low Proliferators,8,2.1075735155,7,0.007133093350723463
+aPD1,Low Proliferators,7,1.181160469,3,0.07539278251398565
+Entospletinib,High Proliferators,6,1.2680702725,2,0.07110662096819625
+aPD1,High Proliferators,7,1.586242971,4,0.10244694690818927
