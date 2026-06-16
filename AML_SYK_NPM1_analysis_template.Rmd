@@ -10,9 +10,7 @@ output:
     code_folding: show
     df_print: paged
 runtime: shiny
-params:
-  excel_file: "../data/MS Figure data_4.7.2026.xlsx"
-  output_dir: "results"
+
 ---
 
 ```{r setup, include=FALSE}
@@ -43,7 +41,7 @@ for (pkg in setdiff(required_pkgs, installed)) {
 invisible(lapply(required_pkgs, library, character.only = TRUE))
 
 params = list(
-  excel_file = "../data/MS Figure data_4.7.2026.xlsx",
+  excel_file = "data/MS Figure data_5.4.2026.xlsx",
   output_dir = "results" )
 
 dir.create(params$output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -95,11 +93,10 @@ sheet_inventory <- tibble(
 write_xlsx(list(sheet_inventory = sheet_inventory), file.path(tab_dir, "sheet_inventory.xlsx"))
 sheet_inventory
 
-fig6_pa = clean_sheets$Fig6_PA
+fig3 = clean_sheets$Fig_4_Ehsan  
 ```
 
 ```{r clean-data}
-stopifnot(!is.null(fig6_pa))
 
 fig6_pa <- fig6_pa %>%
   as_tibble() %>%
