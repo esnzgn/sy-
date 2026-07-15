@@ -1,0 +1,832 @@
+---
+title: "Figure 5 combined panels"
+author: "Ehsan Zangene"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, dpi = 300)
+```
+
+# Purpose
+
+Build the new Figure 5 requested from:
+
+- Panel A: original Fig 6A, total-cell flow relative pSYK, 2 h and 24 h.
+- Panel B: original Fig 6B, 4 h imaging relative pSYK in myeloid AML cells.
+
+Panel C has been removed. Panels A and B emphasize the WT-versus-NPM1-mutant
+difference at each dose using median bars, individual observations, and
+dose-specific statistical comparisons. Panel A displays the same intended dose
+series (UT, 1, 10, and 30 uM) at both 2 h and 24 h; the original worksheet dose
+strings are retained in the exported data for auditability.
+
+```{r packages}
+required_packages <- c(
+  "readxl", "dplyr", "tidyr", "ggplot2", "patchwork", "scales",
+  "stringr", "readr", "ggrepel", "ggh4x"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+if (length(missing_packages) > 0) {
+  stop(
+    "Please install missing package(s): ", paste(missing_packages, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(stringr)
+library(readr)
+library(ggrepel)
+library(ggh4x)
+```
+
+```{r paths}
+input_file <- file.path("data", "MS Figure data_5.4.2026.xlsx")
+output_dir <- file.path("results", "figures")
+table_dir <- file.path("results", "tables")
+
+if (!file.exists(input_file) && file.exists("MS Figure data_5.4.2026.xlsx")) {
+  input_file <- "MS Figure data_5.4.2026.xlsx"
+}
+if (!file.exists(input_file)) {
+  stop("Input file not found: ", input_file, call. = FALSE)
+}
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+```{r shared-style}
+npm1_colours <- c("WT" = "#F06D67", "mut" = "#05B9C2")
+npm1_point_colours <- c("WT" = "#9E2F2F", "mut" = "#00777D")
+treatment_fills <- c("UT" = "#E6E6E6", "ENTO" = "#F6D1D1", "LANRA" = "#F06D67")
+
+theme_figure5 <- function(base_size = 9.5) {
+  theme_classic(base_size = base_size) +
+    theme(
+      axis.line = element_line(color = "grey20", linewidth = 0.4),
+      axis.ticks = element_line(color = "grey20", linewidth = 0.3),
+      axis.text = element_text(color = "grey20"),
+      axis.title = element_text(face = "bold", color = "grey10"),
+      panel.grid.major.y = element_line(color = "grey88", linewidth = 0.3),
+      panel.grid.minor = element_blank(),
+      strip.text = element_text(face = "bold", color = "grey12"),
+      strip.background = element_rect(fill = "grey90", color = "grey30", linewidth = 0.35),
+      legend.title = element_text(face = "bold"),
+      legend.key = element_rect(fill = "white", color = NA),
+      plot.title = element_text(face = "bold", size = rel(1.05), hjust = 0),
+      plot.tag = element_text(face = "bold", size = rel(1.4)),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.margin = margin(5, 5, 5, 5)
+    )
+}
+
+format_dose <- function(dose_nM) {
+  case_when(
+    dose_nM == 0 ~ "UT",
+    dose_nM >= 1000 ~ paste0(dose_nM / 1000, " uM"),
+    TRUE ~ paste0(dose_nM, " nM")
+  )
+}
+
+format_p_value <- function(p) {
+  case_when(
+    is.na(p) ~ "p=NA",
+    p < 0.001 ~ "p<0.001",
+    p < 0.01 ~ paste0("p=", formatC(p, format = "f", digits = 3)),
+    p < 0.1 ~ paste0("p=", formatC(p, format = "f", digits = 3)),
+    TRUE ~ paste0("p=", formatC(p, format = "f", digits = 2))
+  )
+}
+
+compute_vs_ut_tests <- function(data, group_vars) {
+  join_vars <- intersect(c("time_point", "npm1_genot", "sample_id"), names(data))
+  ut_lookup <- data |>
+    filter(treat == "UT") |>
+    select(all_of(join_vars), ut_value = relative_value)
+
+  data |>
+    filter(treat != "UT") |>
+    left_join(ut_lookup, by = join_vars) |>
+    filter(!is.na(relative_value), !is.na(ut_value)) |>
+    group_by(across(all_of(group_vars))) |>
+    group_modify(~ {
+      differences <- .x$relative_value - .x$ut_value
+      exact_ok <- all(differences != 0) && anyDuplicated(abs(differences)) == 0
+      test_result <- suppressWarnings(wilcox.test(
+        differences,
+        mu = 0,
+        alternative = "two.sided",
+        exact = exact_ok
+      ))
+
+      tibble(
+        n = length(differences),
+        median_treated = median(.x$relative_value),
+        median_ut = median(.x$ut_value),
+        statistic_v = unname(test_result$statistic),
+        p_value = test_result$p.value,
+        test_method = test_result$method,
+        max_observed = max(.x$relative_value)
+      )
+    }) |>
+    ungroup() |>
+    mutate(
+      p_adjust_bh = p.adjust(p_value, method = "BH"),
+      p_label = format_p_value(p_value)
+    )
+}
+```
+
+# Panel A
+
+```{r panel-a-data}
+raw_fig6 <- readxl::read_excel(input_file, sheet = "Fig 6", col_names = FALSE)
+
+parse_fig6a_time <- function(raw, ut_row, dose_rows, flow_time) {
+  source_rows <- c(ut_row, dose_rows)
+
+  tibble(
+    source_row = source_rows,
+    treat = as.character(raw[[1]][source_rows]),
+    source_dosage = as.character(raw[[3]][source_rows]),
+    wt_1 = suppressWarnings(as.numeric(raw[[4]][source_rows])),
+    wt_2 = suppressWarnings(as.numeric(raw[[5]][source_rows])),
+    mut_1 = suppressWarnings(as.numeric(raw[[7]][source_rows])),
+    mut_2 = suppressWarnings(as.numeric(raw[[8]][source_rows]))
+  ) |>
+    mutate(
+      treat = case_when(
+        str_detect(treat, "^UT") ~ "UT",
+        treat %in% c("ENTO", "LANRA") ~ treat,
+        TRUE ~ NA_character_
+      ),
+      source_dosage = if_else(treat == "UT", "UT", source_dosage)
+    ) |>
+    filter(!is.na(treat)) |>
+    group_by(treat) |>
+    arrange(source_row, .by_group = TRUE) |>
+    mutate(
+      dose_rank = if_else(treat == "UT", 0L, row_number()),
+      dose_uM = case_when(
+        dose_rank == 0L ~ 0,
+        dose_rank == 1L ~ 1,
+        dose_rank == 2L ~ 10,
+        dose_rank == 3L ~ 30
+      )
+    ) |>
+    ungroup() |>
+    pivot_longer(
+      cols = c(wt_1, wt_2, mut_1, mut_2),
+      names_to = "sample_code",
+      values_to = "relative_value"
+    ) |>
+    filter(!is.na(relative_value)) |>
+    mutate(
+      panel = "A",
+      readout = "Relative pSYK+ total cells",
+      time_point = paste0(flow_time, " h flow"),
+      npm1_genot = if_else(str_detect(sample_code, "^wt"), "WT", "mut"),
+      sample_id = paste(npm1_genot, str_extract(sample_code, "\\d+$")),
+      dose_label = factor(
+        if_else(dose_uM == 0, "UT", format(dose_uM, trim = TRUE)),
+        levels = c("UT", "1", "10", "30")
+      )
+    )
+}
+
+panel_a_df <- bind_rows(
+  parse_fig6a_time(raw_fig6, 5, c(7:9, 11:13), 2),
+  parse_fig6a_time(raw_fig6, 18, c(20:22, 24:26), 24)
+) |>
+  mutate(
+    treat = factor(treat, levels = c("UT", "ENTO", "LANRA")),
+    npm1_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    time_point = factor(time_point, levels = c("2 h flow", "24 h flow"))
+  )
+
+readr::write_csv(panel_a_df, file.path(table_dir, "figure5_panel_a_data.csv"))
+```
+
+```{r panel-a-plot, fig.width=7.5, fig.height=4.8}
+panel_a_plot_df <- panel_a_df |>
+  mutate(
+    plot_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    x_group = case_when(
+      treat == "UT" ~ 1,
+      treat == "ENTO" & dose_label == "1" ~ 2,
+      treat == "ENTO" & dose_label == "10" ~ 3,
+      treat == "ENTO" & dose_label == "30" ~ 4,
+      treat == "LANRA" & dose_label == "1" ~ 5,
+      treat == "LANRA" & dose_label == "10" ~ 6,
+      treat == "LANRA" & dose_label == "30" ~ 7
+    ),
+    value_label = formatC(relative_value, format = "f", digits = 2)
+  )
+
+panel_a_summary <- panel_a_plot_df |>
+  group_by(time_point, plot_genot, treat, dose_label, x_group) |>
+  summarise(median_value = median(relative_value), .groups = "drop")
+
+panel_a_point_df <- panel_a_plot_df
+
+panel_a_tests <- compute_vs_ut_tests(
+  panel_a_df,
+  c("time_point", "treat", "dose_label", "npm1_genot")
+) |>
+  mutate(
+    plot_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    x_group = case_when(
+      treat == "ENTO" & dose_label == "1" ~ 2,
+      treat == "ENTO" & dose_label == "10" ~ 3,
+      treat == "ENTO" & dose_label == "30" ~ 4,
+      treat == "LANRA" & dose_label == "1" ~ 5,
+      treat == "LANRA" & dose_label == "10" ~ 6,
+      treat == "LANRA" & dose_label == "30" ~ 7
+    ),
+    x_start = x_group - 0.22,
+    x_end = x_group + 0.22,
+    y_position = pmin(max_observed + 0.09, 1.19),
+    tick_low = y_position - 0.035,
+    p_label = paste0("UT ", p_label)
+  )
+
+old_panel_a_test_file <- file.path(table_dir, "figure5_panel_a_wt_vs_mut_tests.csv")
+if (file.exists(old_panel_a_test_file)) {
+  file.remove(old_panel_a_test_file)
+}
+readr::write_csv(panel_a_tests, file.path(table_dir, "figure5_panel_a_vs_own_ut_tests.csv"))
+
+p_a <- ggplot() +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.3, color = "grey25") +
+  geom_col(
+    data = panel_a_summary,
+    aes(x = x_group, y = median_value, fill = treat),
+    width = 0.62,
+    color = "grey20",
+    linewidth = 0.32,
+    alpha = 0.76
+  ) +
+  geom_point(
+    data = panel_a_point_df,
+    aes(x = x_group, y = relative_value, color = npm1_genot),
+    position = position_jitter(width = 0.12, height = 0, seed = 5061),
+    size = 2.25,
+    alpha = 0.96,
+    show.legend = FALSE
+  ) +
+  ggrepel::geom_text_repel(
+    data = panel_a_point_df |> filter(dose_label != "UT"),
+    aes(x = x_group, y = relative_value, label = value_label),
+    color = "grey12",
+    size = 2.25,
+    fontface = "bold",
+    seed = 5061,
+    box.padding = 0.045,
+    point.padding = 0.035,
+    min.segment.length = 0,
+    segment.color = "grey55",
+    segment.size = 0.18,
+    max.overlaps = Inf,
+    show.legend = FALSE
+  ) +
+  geom_segment(
+    data = panel_a_tests,
+    aes(x = x_start, xend = x_end, y = y_position, yend = y_position),
+    linewidth = 0.32,
+    color = "grey15"
+  ) +
+  geom_segment(
+    data = panel_a_tests,
+    aes(x = x_start, xend = x_start, y = tick_low, yend = y_position),
+    linewidth = 0.32,
+    color = "grey15"
+  ) +
+  geom_segment(
+    data = panel_a_tests,
+    aes(x = x_end, xend = x_end, y = tick_low, yend = y_position),
+    linewidth = 0.32,
+    color = "grey15"
+  ) +
+  geom_text(
+    data = panel_a_tests,
+    aes(x = x_group, y = y_position + 0.04, label = p_label),
+    size = 2.35,
+    fontface = "bold",
+    color = "grey10"
+  ) +
+  facet_grid(
+    time_point ~ plot_genot,
+    drop = TRUE,
+    labeller = labeller(plot_genot = c(WT = "NPM1 WT samples", mut = "NPM1 mut. samples"))
+  ) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c("UT", "ENTO\n1", "ENTO\n10", "ENTO\n30", "LANRA\n1", "LANRA\n10", "LANRA\n30"),
+    expand = expansion(mult = c(0.04, 0.06))
+  ) +
+  scale_y_continuous(limits = c(0, 1.29), breaks = c(0, 0.5, 1.0)) +
+  scale_color_manual(values = c("WT" = "grey30", "mut" = "#00AEB5"), guide = "none") +
+  scale_fill_manual(values = treatment_fills, name = "Drug") +
+  labs(
+    title = "Relative pSYK, flow",
+    subtitle = "Bars: median; dots: samples; p-values compare each genotype with its own UT baseline",
+    x = "Treatment and dose (uM)",
+    y = "Relative pSYK",
+    fill = "Drug"
+  ) +
+  theme_figure5(9.2) +
+  theme(
+    legend.position = "bottom",
+    plot.subtitle = element_text(size = 8.2, color = "grey35", margin = margin(b = 4)),
+    panel.spacing = unit(0.65, "lines")
+  )
+
+p_a
+```
+
+# Panel B
+
+```{r panel-b-data}
+parse_fig6b <- function(raw) {
+  genotypes_all <- as.character(unlist(raw[33, ]))
+  samples_all <- as.character(unlist(raw[34, ]))
+  keep_cols <- which(
+    !is.na(samples_all) &
+      str_detect(genotypes_all, regex("npm1 WT|npm1 mut", ignore_case = TRUE))
+  )
+
+  sample_map <- tibble(
+    source_col = keep_cols,
+    sample_id = samples_all[keep_cols],
+    npm1_genot = if_else(
+      str_detect(genotypes_all[keep_cols], regex("mut", ignore_case = TRUE)),
+      "mut",
+      "WT"
+    )
+  )
+
+  condition_map <- tibble(
+    treat = c("UT", "ENTO", "ENTO", "ENTO", "LANRA", "LANRA", "LANRA"),
+    source_row = c(35, 37, 38, 39, 41, 42, 43),
+    dosage = c("0nM", "200nM", "1000nM", "5000nM", "200nM", "1000nM", "5000nM")
+  )
+
+  bind_rows(lapply(seq_len(nrow(condition_map)), function(i) {
+    sample_map |>
+      mutate(
+        treat = condition_map$treat[i],
+        source_row = condition_map$source_row[i],
+        dosage = condition_map$dosage[i],
+        relative_value = suppressWarnings(as.numeric(unlist(raw[condition_map$source_row[i], keep_cols])))
+      )
+  })) |>
+    filter(!is.na(relative_value)) |>
+    mutate(
+      panel = "B",
+      readout = "Relative pSYK+ myeloid AML cells",
+      time_point = "4 h imaging",
+      dose_nM = readr::parse_number(dosage),
+      dose_uM = dose_nM / 1000,
+      dose_label = factor(
+        case_when(
+          treat == "UT" ~ "UT",
+          dose_uM == 0.2 ~ "0.2",
+          dose_uM == 1 ~ "1",
+          dose_uM == 5 ~ "5"
+        ),
+        levels = c("UT", "0.2", "1", "5")
+      )
+    )
+}
+
+panel_b_df <- parse_fig6b(raw_fig6) |>
+  mutate(
+    treat = factor(treat, levels = c("UT", "ENTO", "LANRA")),
+    npm1_genot = factor(npm1_genot, levels = c("WT", "mut"))
+  )
+
+readr::write_csv(panel_b_df, file.path(table_dir, "figure5_panel_b_data.csv"))
+```
+
+```{r panel-b-plot, fig.width=7.5, fig.height=3.2}
+panel_b_plot_df <- bind_rows(
+  panel_b_df
+) |>
+  mutate(
+    plot_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    x_group = case_when(
+      treat == "UT" ~ 1,
+      treat == "ENTO" & dose_label == "0.2" ~ 2,
+      treat == "ENTO" & dose_label == "1" ~ 3,
+      treat == "ENTO" & dose_label == "5" ~ 4,
+      treat == "LANRA" & dose_label == "0.2" ~ 5,
+      treat == "LANRA" & dose_label == "1" ~ 6,
+      treat == "LANRA" & dose_label == "5" ~ 7
+    )
+  )
+
+panel_b_summary <- panel_b_plot_df |>
+  group_by(plot_genot, treat, dose_label, x_group) |>
+  summarise(median_value = median(relative_value), .groups = "drop")
+
+panel_b_point_df <- panel_b_plot_df |>
+  arrange(plot_genot, dose_label, sample_id) |>
+  group_by(plot_genot, dose_label) |>
+  mutate(
+    capped_outlier = relative_value > 2.55,
+    plot_value = pmin(relative_value, 2.61)
+  ) |>
+  ungroup()
+
+panel_b_tests <- compute_vs_ut_tests(
+  panel_b_df,
+  c("treat", "dose_label", "npm1_genot")
+) |>
+  mutate(
+    plot_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    x_group = case_when(
+      treat == "ENTO" & dose_label == "0.2" ~ 2,
+      treat == "ENTO" & dose_label == "1" ~ 3,
+      treat == "ENTO" & dose_label == "5" ~ 4,
+      treat == "LANRA" & dose_label == "0.2" ~ 5,
+      treat == "LANRA" & dose_label == "1" ~ 6,
+      treat == "LANRA" & dose_label == "5" ~ 7
+    ),
+    x_start = x_group - 0.22,
+    x_end = x_group + 0.22,
+    y_position = pmin(max_observed + 0.15, 2.42),
+    tick_low = y_position - 0.08,
+    p_label = paste0("UT ", p_label)
+  )
+
+old_panel_b_test_file <- file.path(table_dir, "figure5_panel_b_wt_vs_mut_tests.csv")
+if (file.exists(old_panel_b_test_file)) {
+  file.remove(old_panel_b_test_file)
+}
+readr::write_csv(panel_b_tests, file.path(table_dir, "figure5_panel_b_vs_own_ut_tests.csv"))
+
+p_b <- ggplot() +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.3, color = "grey25") +
+  geom_col(
+    data = panel_b_summary,
+    aes(x = x_group, y = median_value, fill = treat),
+    width = 0.62,
+    color = "grey20",
+    linewidth = 0.32,
+    alpha = 0.76
+  ) +
+  geom_point(
+    data = panel_b_point_df |> filter(!capped_outlier),
+    aes(x = x_group, y = plot_value, color = npm1_genot),
+    position = position_jitter(width = 0.12, height = 0, seed = 508),
+    size = 2.05,
+    alpha = 0.92,
+    show.legend = FALSE
+  ) +
+  geom_point(
+    data = panel_b_point_df |> filter(capped_outlier),
+    aes(x = x_group, y = plot_value, fill = treat),
+    shape = 24,
+    size = 3.1,
+    color = "grey10",
+    stroke = 0.35,
+    show.legend = FALSE
+  ) +
+  geom_text(
+    data = panel_b_point_df |> filter(capped_outlier),
+    aes(x = x_group, y = plot_value + 0.10, label = formatC(relative_value, format = "f", digits = 2)),
+    size = 2.6,
+    fontface = "bold",
+    color = "grey10",
+    show.legend = FALSE
+  ) +
+  geom_segment(
+    data = panel_b_tests,
+    aes(x = x_start, xend = x_end, y = y_position, yend = y_position),
+    linewidth = 0.34,
+    color = "grey15"
+  ) +
+  geom_segment(
+    data = panel_b_tests,
+    aes(x = x_start, xend = x_start, y = tick_low, yend = y_position),
+    linewidth = 0.34,
+    color = "grey15"
+  ) +
+  geom_segment(
+    data = panel_b_tests,
+    aes(x = x_end, xend = x_end, y = tick_low, yend = y_position),
+    linewidth = 0.34,
+    color = "grey15"
+  ) +
+  geom_text(
+    data = panel_b_tests,
+    aes(x = x_group, y = y_position + 0.11, label = p_label),
+    size = 2.65,
+    fontface = "bold",
+    color = "grey10"
+  ) +
+  facet_grid(
+    . ~ plot_genot,
+    labeller = labeller(plot_genot = c(WT = "NPM1 WT samples", mut = "NPM1 mut. samples"))
+  ) +
+  scale_x_continuous(
+    breaks = 1:7,
+    labels = c("UT", "ENTO\n0.2", "ENTO\n1", "ENTO\n5", "LANRA\n0.2", "LANRA\n1", "LANRA\n5"),
+    expand = expansion(mult = c(0.04, 0.06))
+  ) +
+  scale_y_continuous(limits = c(0, 2.78), breaks = c(0, 1, 2)) +
+  scale_color_manual(values = c("WT" = "grey30", "mut" = "#00AEB5"), guide = "none") +
+  scale_fill_manual(values = treatment_fills, name = "Drug") +
+  labs(
+    title = "Relative pSYK, myeloid imaging",
+    subtitle = "Bars: median; dots: samples; p-values compare each genotype with its own UT baseline; triangle labels the 4.68 outlier",
+    x = "Treatment and dose (uM)",
+    y = "Relative pSYK",
+    fill = "NPM1"
+  ) +
+  theme_figure5(9.2) +
+  theme(
+    legend.position = "bottom",
+    plot.subtitle = element_text(size = 8.2, color = "grey35", margin = margin(b = 4)),
+    panel.spacing = unit(0.65, "lines")
+  )
+
+p_b
+```
+
+<!-- Panel C was removed from Figure 5. Its prior code is retained below only
+for provenance and is not evaluated or extracted. -->
+
+# Removed Panel C archive
+
+```{r panel-c-data, eval=FALSE, include=FALSE, purl=FALSE}
+raw_fig7 <- readxl::read_excel(input_file, sheet = "Fig 7", col_names = FALSE)
+
+parse_fig7_panel <- function(
+    raw, cell_type, genotype_row, sample_id_row, ut_row, ento_row, lanra_row) {
+  genotypes_all <- as.character(unlist(raw[genotype_row, ]))
+  sample_ids_all <- as.character(unlist(raw[sample_id_row, ]))
+  keep_cols <- which(
+    !is.na(sample_ids_all) &
+      str_detect(genotypes_all, regex("^wt$|npm1 mut", ignore_case = TRUE))
+  )
+
+  sample_map <- tibble(
+    source_col = keep_cols,
+    sample_id = sample_ids_all[keep_cols],
+    npm1_genot = if_else(
+      str_detect(genotypes_all[keep_cols], regex("mut", ignore_case = TRUE)),
+      "mut",
+      "WT"
+    )
+  )
+
+  bind_rows(
+    sample_map |>
+      mutate(treat = "UT", dosage = "0nM", relative_value = as.numeric(unlist(raw[ut_row, keep_cols]))),
+    sample_map |>
+      mutate(
+        treat = "ENTO",
+        dosage = as.character(raw[[3]][ento_row]),
+        relative_value = as.numeric(unlist(raw[ento_row, keep_cols]))
+      ),
+    sample_map |>
+      mutate(
+        treat = "LANRA",
+        dosage = as.character(raw[[3]][lanra_row]),
+        relative_value = as.numeric(unlist(raw[lanra_row, keep_cols]))
+      )
+  ) |>
+    mutate(
+      cell_type = cell_type,
+      dose_nM = readr::parse_number(dosage),
+      dose_label = format_dose(dose_nM)
+    ) |>
+    select(
+      cell_type, npm1_genot, sample_id, source_col, treat, dosage,
+      dose_nM, dose_label, relative_value
+    )
+}
+
+panel_c_df <- bind_rows(
+  parse_fig7_panel(raw_fig7, "Myeloid cell death", 14, 15, 17, 18, 19),
+  parse_fig7_panel(raw_fig7, "T cell death", 35, 36, 38, 39, 40)
+) |>
+  mutate(
+    treat = factor(treat, levels = c("UT", "ENTO", "LANRA")),
+    npm1_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    cell_type = factor(cell_type, levels = c("Myeloid cell death", "T cell death"))
+  ) |>
+  filter(dose_nM %in% c(0, 1000, 5000))
+
+readr::write_csv(panel_c_df, file.path(table_dir, "figure5_panel_c_fig7bc_data.csv"))
+
+available_panel_c_doses <- panel_c_df |>
+  filter(treat != "UT") |>
+  distinct(treat, dose_nM, dose_label) |>
+  arrange(treat, dose_nM)
+
+available_panel_c_doses
+```
+
+```{r panel-c-plot, fig.width=5.2, fig.height=7.5, eval=FALSE, include=FALSE, purl=FALSE}
+panel_c_plot_df <- panel_c_df |>
+  filter(treat != "UT") |>
+  mutate(
+    treatment_label = paste0(as.character(treat), "\n", dose_label),
+    treatment_label = factor(treatment_label, levels = c("ENTO\n1 uM", "LANRA\n1 uM")),
+    response_zone = if_else(relative_value >= 1, "above UT", "below UT")
+  )
+
+panel_c_medians <- panel_c_plot_df |>
+  group_by(cell_type, treatment_label, npm1_genot) |>
+  summarise(median_value = median(relative_value, na.rm = TRUE), .groups = "drop") |>
+  mutate(median_label = sprintf("%.2f", median_value))
+
+panel_c_tests <- panel_c_plot_df |>
+  group_by(cell_type, treatment_label, npm1_genot) |>
+  group_modify(~ {
+    values <- .x$relative_value[!is.na(.x$relative_value)]
+    test_result <- suppressWarnings(wilcox.test(
+      values,
+      mu = 1,
+      alternative = "two.sided",
+      exact = TRUE
+    ))
+
+    tibble(
+      n = length(values),
+      median_value = median(values),
+      statistic_v = unname(test_result$statistic),
+      p_value = test_result$p.value,
+      y_position = min(max(values) + 0.17, 2.49)
+    )
+  }) |>
+  ungroup() |>
+  mutate(
+    p_label = paste0("vs UT\n", format_p_value(p_value)),
+    x_mid = as.numeric(npm1_genot),
+    x_start = x_mid - 0.19,
+    x_end = x_mid + 0.19,
+    tick_low = y_position - 0.06
+  )
+
+old_panel_c_test_file <- file.path(table_dir, "figure5_panel_c_wt_vs_mut_tests.csv")
+if (file.exists(old_panel_c_test_file)) {
+  file.remove(old_panel_c_test_file)
+}
+readr::write_csv(panel_c_tests, file.path(table_dir, "figure5_panel_c_vs_own_ut_tests.csv"))
+
+p_c <- ggplot(panel_c_plot_df, aes(npm1_genot, relative_value)) +
+  annotate(
+    "rect",
+    xmin = -Inf, xmax = Inf,
+    ymin = 1, ymax = Inf,
+    fill = "#FCE8E6",
+    alpha = 0.45
+  ) +
+  annotate(
+    "rect",
+    xmin = -Inf, xmax = Inf,
+    ymin = -Inf, ymax = 1,
+    fill = "#F7F7F7",
+    alpha = 0.35
+  ) +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.35, color = "grey25") +
+  geom_boxplot(
+    aes(fill = npm1_genot),
+    width = 0.54,
+    outlier.shape = NA,
+    color = "grey25",
+    linewidth = 0.32,
+    alpha = 0.20
+  ) +
+  geom_point(
+    aes(color = npm1_genot),
+    position = position_jitter(width = 0.105, height = 0, seed = 507),
+    size = 1.8,
+    alpha = 0.95
+  ) +
+  geom_point(
+    data = panel_c_medians,
+    aes(x = npm1_genot, y = median_value, color = npm1_genot),
+    shape = 18,
+    size = 3.2,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data = panel_c_medians,
+    aes(x = npm1_genot, y = median_value, label = median_label),
+    inherit.aes = FALSE,
+    nudge_y = 0.16,
+    size = 3.0,
+    fontface = "bold",
+    color = "grey8",
+    show.legend = FALSE
+  ) +
+  geom_segment(
+    data = panel_c_tests,
+    aes(x = x_start, xend = x_end, y = y_position, yend = y_position),
+    inherit.aes = FALSE,
+    linewidth = 0.35,
+    color = "grey20"
+  ) +
+  geom_segment(
+    data = panel_c_tests,
+    aes(x = x_start, xend = x_start, y = tick_low, yend = y_position),
+    inherit.aes = FALSE,
+    linewidth = 0.35,
+    color = "grey20"
+  ) +
+  geom_segment(
+    data = panel_c_tests,
+    aes(x = x_end, xend = x_end, y = tick_low, yend = y_position),
+    inherit.aes = FALSE,
+    linewidth = 0.35,
+    color = "grey20"
+  ) +
+  geom_text(
+    data = panel_c_tests,
+    aes(x = x_mid, y = y_position + 0.09, label = p_label),
+    inherit.aes = FALSE,
+    size = 2.45,
+    fontface = "bold",
+    color = "grey15"
+  ) +
+  facet_grid(cell_type ~ treatment_label) +
+  scale_fill_manual(values = npm1_colours, name = "NPM1") +
+  scale_color_manual(values = npm1_colours, name = "NPM1") +
+  coord_cartesian(ylim = c(0, 2.70)) +
+  labs(
+    title = "cPARP cell death, imaging",
+    subtitle = "1 uM treatment; p-values compare each group with its own UT baseline",
+    x = NULL,
+    y = "Relative cPARP+ cells"
+  ) +
+  theme_figure5(8.5) +
+  theme(
+    axis.text.x = element_text(face = "bold"),
+    legend.position = "bottom",
+    panel.spacing = unit(0.8, "lines"),
+    plot.subtitle = element_text(size = 8, color = "grey35", margin = margin(b = 4))
+  )
+
+p_c
+```
+
+# Combined Figure 5
+
+```{r combined-figure-5, fig.width=12.5, fig.height=10.2}
+figure5_combined <- (p_a / p_b) +
+  plot_layout(heights = c(1.05, 1), guides = "collect") +
+  plot_annotation(
+    title = "Figure 5",
+    tag_levels = "A",
+    theme = theme(
+      plot.title = element_text(face = "bold", size = 24, color = "black", hjust = 0.5),
+      plot.tag = element_text(face = "bold", size = 17)
+    )
+  ) &
+  theme(legend.position = "bottom")
+
+figure5_combined
+
+ggsave(
+  file.path(output_dir, "figure5_combined_v1.png"),
+  figure5_combined,
+  width = 12.5,
+  height = 10.2,
+  dpi = 450,
+  bg = "white"
+)
+
+ggsave(
+  file.path(output_dir, "figure5_combined_v1.pdf"),
+  figure5_combined,
+  width = 12.5,
+  height = 10.2,
+  bg = "white"
+)
+```
+
+```{r notes, results='asis'}
+cat("- Panel C was removed from Figure 5.\\n")
+cat("- Panel A displays UT, 1, 10, and 30 uM at both time points.\\n")
+cat("- Original worksheet dose strings remain in figure5_panel_a_data.csv.\\n")
+```

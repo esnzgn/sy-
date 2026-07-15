@@ -1,0 +1,103 @@
+cell_type,npm1_genot,sample_id,source_col,treat,dosage,dose_nM,dose_label,relative_value
+Myeloid cell death,WT,21-00734,5,UT,0nM,0,UT,1
+Myeloid cell death,WT,21-00794,6,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00012,7,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00016,8,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00043,9,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00111,11,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00127,12,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00129,13,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00163,14,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00173,15,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00175,16,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00214,17,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00273,19,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00370,20,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00385,21,UT,0nM,0,UT,1
+Myeloid cell death,WT,22-00394,22,UT,0nM,0,UT,1
+Myeloid cell death,mut,22-00424,23,UT,0nM,0,UT,1
+Myeloid cell death,WT,21-00734,5,ENTO,1000nM,1000,1 uM,0.82580645
+Myeloid cell death,WT,21-00794,6,ENTO,1000nM,1000,1 uM,1.16258352
+Myeloid cell death,mut,22-00012,7,ENTO,1000nM,1000,1 uM,1.18258132
+Myeloid cell death,mut,22-00016,8,ENTO,1000nM,1000,1 uM,1.17247387
+Myeloid cell death,mut,22-00043,9,ENTO,1000nM,1000,1 uM,1.42384106
+Myeloid cell death,WT,22-00111,11,ENTO,1000nM,1000,1 uM,0.75383044
+Myeloid cell death,mut,22-00127,12,ENTO,1000nM,1000,1 uM,1.73464746
+Myeloid cell death,WT,22-00129,13,ENTO,1000nM,1000,1 uM,1.12422008
+Myeloid cell death,WT,22-00163,14,ENTO,1000nM,1000,1 uM,1.37234043
+Myeloid cell death,mut,22-00173,15,ENTO,1000nM,1000,1 uM,1.48988764
+Myeloid cell death,WT,22-00175,16,ENTO,1000nM,1000,1 uM,1.31394482
+Myeloid cell death,mut,22-00214,17,ENTO,1000nM,1000,1 uM,1.34932534
+Myeloid cell death,WT,22-00273,19,ENTO,1000nM,1000,1 uM,1.02384615
+Myeloid cell death,WT,22-00370,20,ENTO,1000nM,1000,1 uM,1.18831169
+Myeloid cell death,WT,22-00385,21,ENTO,1000nM,1000,1 uM,1.76276276
+Myeloid cell death,WT,22-00394,22,ENTO,1000nM,1000,1 uM,0.62028986
+Myeloid cell death,mut,22-00424,23,ENTO,1000nM,1000,1 uM,1.2345679
+Myeloid cell death,WT,21-00734,5,LANRA,1000nM,1000,1 uM,0.83225806
+Myeloid cell death,WT,21-00794,6,LANRA,1000nM,1000,1 uM,1.12249443
+Myeloid cell death,mut,22-00012,7,LANRA,1000nM,1000,1 uM,1.21196222
+Myeloid cell death,mut,22-00016,8,LANRA,1000nM,1000,1 uM,1.22648084
+Myeloid cell death,mut,22-00043,9,LANRA,1000nM,1000,1 uM,1.20198675
+Myeloid cell death,WT,22-00111,11,LANRA,1000nM,1000,1 uM,1.06741573
+Myeloid cell death,mut,22-00127,12,LANRA,1000nM,1000,1 uM,1.43821077
+Myeloid cell death,WT,22-00129,13,LANRA,1000nM,1000,1 uM,1.69597277
+Myeloid cell death,WT,22-00163,14,LANRA,1000nM,1000,1 uM,2.0212766
+Myeloid cell death,mut,22-00173,15,LANRA,1000nM,1000,1 uM,1.61348315
+Myeloid cell death,WT,22-00175,16,LANRA,1000nM,1000,1 uM,0.87546607
+Myeloid cell death,mut,22-00214,17,LANRA,1000nM,1000,1 uM,1.15892054
+Myeloid cell death,WT,22-00273,19,LANRA,1000nM,1000,1 uM,1.29615385
+Myeloid cell death,WT,22-00370,20,LANRA,1000nM,1000,1 uM,0.91233766
+Myeloid cell death,WT,22-00385,21,LANRA,1000nM,1000,1 uM,1.71171171
+Myeloid cell death,WT,22-00394,22,LANRA,1000nM,1000,1 uM,0.81449275
+Myeloid cell death,mut,22-00424,23,LANRA,1000nM,1000,1 uM,1.23045267
+T cell death,WT,21-00734,5,UT,0nM,0,UT,1
+T cell death,WT,21-00794,6,UT,0nM,0,UT,1
+T cell death,mut,22-00012,7,UT,0nM,0,UT,1
+T cell death,mut,22-00016,8,UT,0nM,0,UT,1
+T cell death,mut,22-00043,9,UT,0nM,0,UT,1
+T cell death,WT,22-00111,11,UT,0nM,0,UT,1
+T cell death,mut,22-00127,12,UT,0nM,0,UT,1
+T cell death,WT,22-00129,13,UT,0nM,0,UT,1
+T cell death,WT,22-00163,14,UT,0nM,0,UT,1
+T cell death,mut,22-00173,15,UT,0nM,0,UT,1
+T cell death,WT,22-00175,16,UT,0nM,0,UT,1
+T cell death,mut,22-00214,17,UT,0nM,0,UT,1
+T cell death,WT,22-00273,19,UT,0nM,0,UT,1
+T cell death,WT,22-00370,20,UT,0nM,0,UT,1
+T cell death,WT,22-00385,21,UT,0nM,0,UT,1
+T cell death,WT,22-00394,22,UT,0nM,0,UT,1
+T cell death,mut,22-00424,23,UT,0nM,0,UT,1
+T cell death,WT,21-00734,5,ENTO,1000nM,1000,1 uM,1.04340426
+T cell death,WT,21-00794,6,ENTO,1000nM,1000,1 uM,1.25237747
+T cell death,mut,22-00012,7,ENTO,1000nM,1000,1 uM,0.80291005
+T cell death,mut,22-00016,8,ENTO,1000nM,1000,1 uM,0.73769634
+T cell death,mut,22-00043,9,ENTO,1000nM,1000,1 uM,0.5026178
+T cell death,WT,22-00111,11,ENTO,1000nM,1000,1 uM,0.98075895
+T cell death,mut,22-00127,12,ENTO,1000nM,1000,1 uM,1.83946488
+T cell death,WT,22-00129,13,ENTO,1000nM,1000,1 uM,1.01903629
+T cell death,WT,22-00163,14,ENTO,1000nM,1000,1 uM,1.39130435
+T cell death,mut,22-00173,15,ENTO,1000nM,1000,1 uM,0.98086957
+T cell death,WT,22-00175,16,ENTO,1000nM,1000,1 uM,0.75988428
+T cell death,mut,22-00214,17,ENTO,1000nM,1000,1 uM,1.51346801
+T cell death,WT,22-00273,19,ENTO,1000nM,1000,1 uM,1.77444188
+T cell death,WT,22-00370,20,ENTO,1000nM,1000,1 uM,1.54159292
+T cell death,WT,22-00385,21,ENTO,1000nM,1000,1 uM,1.72
+T cell death,WT,22-00394,22,ENTO,1000nM,1000,1 uM,1.40325203
+T cell death,mut,22-00424,23,ENTO,1000nM,1000,1 uM,0.51503759
+T cell death,WT,21-00734,5,LANRA,1000nM,1000,1 uM,0.57787234
+T cell death,WT,21-00794,6,LANRA,1000nM,1000,1 uM,0.91367959
+T cell death,mut,22-00012,7,LANRA,1000nM,1000,1 uM,1.19973545
+T cell death,mut,22-00016,8,LANRA,1000nM,1000,1 uM,0.86910995
+T cell death,mut,22-00043,9,LANRA,1000nM,1000,1 uM,0.82513089
+T cell death,WT,22-00111,11,LANRA,1000nM,1000,1 uM,1.20523784
+T cell death,mut,22-00127,12,LANRA,1000nM,1000,1 uM,2.10702341
+T cell death,WT,22-00129,13,LANRA,1000nM,1000,1 uM,0.83045806
+T cell death,WT,22-00163,14,LANRA,1000nM,1000,1 uM,1.35507246
+T cell death,mut,22-00173,15,LANRA,1000nM,1000,1 uM,1.9426087
+T cell death,WT,22-00175,16,LANRA,1000nM,1000,1 uM,0.5072324
+T cell death,mut,22-00214,17,LANRA,1000nM,1000,1 uM,1.08417508
+T cell death,WT,22-00273,19,LANRA,1000nM,1000,1 uM,2.03156274
+T cell death,WT,22-00370,20,LANRA,1000nM,1000,1 uM,0.53097345
+T cell death,WT,22-00385,21,LANRA,1000nM,1000,1 uM,2.47
+T cell death,WT,22-00394,22,LANRA,1000nM,1000,1 uM,1.47804878
+T cell death,mut,22-00424,23,LANRA,1000nM,1000,1 uM,0.31954887

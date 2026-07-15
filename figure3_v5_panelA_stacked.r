@@ -1,12 +1,12 @@
-# Figure 3 - Tania comments, v4
+# Figure 3 - Tania comments, v5 Panel A stacked bars
 # Reads: data/MS Figure data_5.4.2026.xlsx, sheet: Fig_4_Ehsan
 # Outputs:
-#   results/figures/figure3_v4_tania_comments.pdf/png
-#   results/figures/figure3_v4_supp_high_proliferators.pdf/png
-#   results/figures/figure3_v4_panelA_violin_median.pdf/png
-#   results/figures/figure3_v4_panelA_violin_sd.pdf/png
-#   results/tables/figure3_v4_data_source.csv
-#   results/tables/figure3_v4_statistics.csv
+#   results/figures/figure3_v5_panelA_stacked.pdf/png
+#   results/figures/figure3_v5_supp_high_proliferators.pdf/png
+#   results/figures/figure3_v5_panelA_stacked_only.pdf/png
+#   results/tables/figure3_v5_data_source.csv
+#   results/tables/figure3_v5_statistics.csv
+#   results/tables/figure3_v5_panelA_stacked_bins.csv
 
 required_packages <- c(
   "readxl", "dplyr", "tidyr", "ggplot2", "patchwork", "scales",
@@ -87,6 +87,7 @@ baseline_threshold <- 2
 response_cutoff <- 1.5
 y_cap <- 5
 group_gap <- 1.8
+use_pseudolog_cd <- TRUE
 
 low_bg_colour <- "#FFFFFF"
 high_bg_colour <- "#FFFFFF"
@@ -97,26 +98,38 @@ response_colours <- c("T cell rescue <= 1.5" = "#F6F6F6", "T cell rescue > 1.5" 
 baseline_ranked <- df |>
   select(Patient, baseline) |>
   filter(!is.na(baseline)) |>
-  arrange(baseline, Patient) |>
   mutate(
     group = if_else(baseline < baseline_threshold, "Low Proliferators", "High Proliferators"),
-    group = factor(group, levels = c("Low Proliferators", "High Proliferators")),
+    group = factor(group, levels = c("Low Proliferators", "High Proliferators"))
+  ) |>
+  arrange(desc(baseline), Patient) |>
+  group_by(group) |>
+  mutate(group_rank = row_number()) |>
+  ungroup() |>
+  mutate(
+    n_low_total = sum(group == "Low Proliferators"),
+    n_high_total = sum(group == "High Proliferators"),
     baseline_rank = row_number(),
-    y_position = n() - baseline_rank + 1 + if_else(group == "Low Proliferators", group_gap, 0),
+    y_position = if_else(
+      group == "High Proliferators",
+      n_low_total + group_gap + n_high_total - group_rank + 1,
+      n_low_total - group_rank + 1
+    ),
     baseline_disp = pmin(baseline, y_cap),
     is_outlier = baseline > y_cap,
     Patient = factor(Patient, levels = Patient)
-  )
+  ) |>
+  select(-n_low_total, -n_high_total)
 
 n_tot <- nrow(baseline_ranked)
 n_low <- sum(baseline_ranked$group == "Low Proliferators")
 n_high <- sum(baseline_ranked$group == "High Proliferators")
 
-high_y_min <- 0.5
-high_y_max <- n_high + 0.5
-low_y_min <- n_high + group_gap + 0.5
-low_y_max <- n_high + group_gap + n_low + 0.5
-gap_y_mid <- (high_y_max + low_y_min) / 2
+low_y_min <- 0.5
+low_y_max <- n_low + 0.5
+high_y_min <- n_low + group_gap + 0.5
+high_y_max <- n_low + group_gap + n_high + 0.5
+gap_y_mid <- (low_y_max + high_y_min) / 2
 
 patient_order <- as.character(baseline_ranked$Patient)
 outlier_labels <- baseline_ranked |> filter(is_outlier)
@@ -168,40 +181,6 @@ panel_background <- function(xmin, xmax, low_speckles = 260, show_high = TRUE) {
     )
   }
   layers
-}
-
-biology_icon <- function(label, x, y, align = "right") {
-  text_x <- if (align == "left") x + 0.28 else x - 0.28
-  text_hjust <- if (align == "left") 0 else 1
-  list(
-    annotate(
-      "point",
-      x = x, y = y,
-      shape = 21,
-      size = 7.2,
-      stroke = 0.7,
-      fill = "#EAF7EC",
-      color = "#2F6F4E"
-    ),
-    annotate(
-      "segment",
-      x = x - 0.18, xend = x + 0.18,
-      y = y, yend = y,
-      color = "#2F6F4E",
-      linewidth = 0.6,
-      arrow = arrow(length = unit(0.08, "in"))
-    ),
-    annotate(
-      "text",
-      x = text_x, y = y,
-      label = label,
-      hjust = text_hjust,
-      vjust = 0.5,
-      size = 2.55,
-      fontface = "bold",
-      color = "#2F6F4E"
-    )
-  )
 }
 
 theme_fig3 <- function(base_size = 11) {
@@ -263,7 +242,7 @@ stats_tbl <- bind_rows(
   drug_response_stats(df, "aPD1", "High Proliferators")
 )
 
-write_csv(stats_tbl, file.path(table_dir, "figure3_v4_statistics.csv"))
+write_csv(stats_tbl, file.path(table_dir, "figure3_v5_statistics.csv"))
 
 write_csv(
   tibble(
@@ -276,88 +255,106 @@ write_csv(
     n_rows = nrow(df),
     n_columns = ncol(df)
   ),
-  file.path(table_dir, "figure3_v4_data_source.csv")
+  file.path(table_dir, "figure3_v5_data_source.csv")
 )
 
-make_panel_a <- function(order_by = c("median", "sd")) {
-  order_by <- match.arg(order_by)
-  drug_stats <- df |>
-    select(Patient, all_of(drug_cols)) |>
-    pivot_longer(-Patient, names_to = "Drug", values_to = "Value") |>
-    filter(!is.na(Value), Value > 0) |>
-    summarise(
-      drug_median = median(Value, na.rm = TRUE),
-      drug_sd = sd(Value, na.rm = TRUE),
-      .by = Drug
+normalize_drug_name <- function(x) {
+  x |>
+    str_replace_all("\u00A0", " ") |>
+    str_remove("\\s*\\([^)]*\\)") |>
+    str_squish()
+}
+
+heatmap_single_drug_order <- function(current_drug_cols) {
+  summary_file <- "heatmap_drug_waterfall_summary_tables.xlsx"
+  if (!file.exists(summary_file)) {
+    return(current_drug_cols)
+  }
+
+  heatmap_order <- read_excel(summary_file, sheet = "TcellProlif_Drugmedians") |>
+    mutate(
+      heatmap_drug = as.character(Drug),
+      clean_heatmap_drug = normalize_drug_name(heatmap_drug),
+      fig3_drug_key = if_else(clean_heatmap_drug == "aPD1+", "aPD1", clean_heatmap_drug)
     ) |>
-    mutate(order_metric = if (order_by == "median") drug_median else drug_sd) |>
-    arrange(desc(order_metric), Drug)
+    filter(clean_heatmap_drug == "aPD1+" | !str_detect(clean_heatmap_drug, "^aPD1\\+ ")) |>
+    pull(fig3_drug_key)
+
+  fig3_lookup <- tibble(
+    drug = current_drug_cols,
+    drug_key = normalize_drug_name(current_drug_cols)
+  )
+
+  ordered_drugs <- tibble(drug_key = heatmap_order) |>
+    left_join(fig3_lookup, by = "drug_key") |>
+    filter(!is.na(drug)) |>
+    pull(drug)
+
+  c(ordered_drugs, setdiff(current_drug_cols, ordered_drugs))
+}
+
+make_panel_a <- function() {
+  drug_order <- heatmap_single_drug_order(drug_cols)
+
+  log2_breaks <- c(-Inf, -2, -1, 0, 1, 2, Inf)
+  log2_labels <- c("<= -2", "-2 to -1", "-1 to 0", "0 to 1", "1 to 2", "> 2")
+  log2_colours <- c(
+    "<= -2" = "#536F84",
+    "-2 to -1" = "#8EA4B6",
+    "-1 to 0" = "#D7DEE3",
+    "0 to 1" = "#C9DEC2",
+    "1 to 2" = "#79BB70",
+    "> 2" = "#00843D"
+  )
 
   panel_a_data <- df |>
     select(Patient, all_of(drug_cols)) |>
     pivot_longer(-Patient, names_to = "Drug", values_to = "Value") |>
     filter(!is.na(Value), Value > 0) |>
     mutate(
-      Drug = factor(Drug, levels = drug_stats$Drug),
-      log2_ratio = log2(Value)
+      Drug = factor(Drug, levels = drug_order),
+      log2_ratio = log2(Value),
+      log2_bin = cut(
+        log2_ratio,
+        breaks = log2_breaks,
+        labels = log2_labels,
+        include.lowest = TRUE,
+        right = TRUE
+      ),
+      log2_bin = factor(log2_bin, levels = log2_labels)
     )
 
-  ggplot(panel_a_data, aes(x = Drug, y = Value)) +
-    geom_rect(
-      data = drug_stats |>
-        mutate(Drug = factor(Drug, levels = drug_stats$Drug), xi = as.integer(Drug)) |>
-        filter(xi %% 2 == 0),
-      aes(xmin = xi - 0.5, xmax = xi + 0.5, ymin = 0.05, ymax = 30),
-      fill = "grey96",
-      color = NA,
-      inherit.aes = FALSE
-    ) +
-    geom_hline(yintercept = 1, linetype = "dashed", color = "grey50", linewidth = 0.55) +
-    geom_violin(
-      fill = "#ECEFF1",
-      color = "#68717A",
-      linewidth = 0.32,
-      alpha = 0.80,
-      trim = FALSE,
-      scale = "width",
-      width = 0.82
-    ) +
-    stat_summary(
-      fun = median,
-      geom = "crossbar",
-      width = 0.50,
-      color = "#1A1A2E",
-      fill = NA,
-      linewidth = 0.55
-    ) +
-    geom_quasirandom(
-      aes(fill = log2_ratio),
-      groupOnX = TRUE,
-      width = 0.18,
-      size = 2.2,
-      shape = 21,
-      stroke = 0.28,
-      color = "white",
-      alpha = 0.90
-    ) +
-    scale_fill_gradient2(
-      low = "#8196A8",
-      mid = "#D9DDE1",
-      high = "#00843D",
-      midpoint = 0,
-      name = "log2 ratio",
-      labels = label_number(accuracy = 0.5),
-      guide = guide_colorbar(barwidth = 0.5, barheight = 5, ticks.colour = "grey40")
-    ) +
-    scale_y_log10(
-      breaks = c(0.1, 0.3, 0.5, 1, 2, 5, 10, 25),
-      labels = c("0.1", "0.3", "0.5", "1", "2", "5", "10", "25"),
-      expand = expansion(mult = c(0.05, 0.12))
+  panel_a_summary <- panel_a_data |>
+    count(Drug, log2_bin, name = "n") |>
+    complete(
+      Drug = factor(drug_order, levels = drug_order),
+      log2_bin = factor(log2_labels, levels = log2_labels),
+      fill = list(n = 0)
+    ) |>
+    group_by(Drug) |>
+    mutate(
+      total_n = sum(n),
+      fraction = if_else(total_n > 0, n / total_n, 0)
+    ) |>
+    ungroup()
+
+  write_csv(
+    panel_a_summary |>
+      mutate(Drug = as.character(Drug), log2_bin = as.character(log2_bin)),
+    file.path(table_dir, "figure3_v5_panelA_stacked_bins.csv")
+  )
+
+  ggplot(panel_a_summary, aes(x = Drug, y = fraction, fill = log2_bin)) +
+    geom_col(width = 0.74, color = "white", linewidth = 0.25) +
+    scale_fill_manual(values = log2_colours, drop = FALSE, name = "log2 ratio") +
+    scale_y_continuous(
+      labels = percent_format(accuracy = 1),
+      expand = expansion(mult = c(0, 0.03))
     ) +
     labs(
       tag = "A",
       x = NULL,
-      y = "Ratio to control (log10 scale)"
+      y = "Patients per log2 ratio bin"
     ) +
     theme_fig3(base_size = 11) +
     theme(
@@ -367,12 +364,11 @@ make_panel_a <- function(order_by = c("median", "sd")) {
     )
 }
 
-pA_median <- make_panel_a("median")
-pA_sd <- make_panel_a("sd")
+pA_stacked <- make_panel_a()
 
 pB <- ggplot(baseline_ranked, aes(y = y_position)) +
   panel_background(xmin = 0, xmax = y_cap, low_speckles = 420, show_high = TRUE) +
-  annotate("rect", xmin = -Inf, xmax = Inf, ymin = high_y_max, ymax = low_y_min, fill = "white", alpha = 1) +
+  annotate("rect", xmin = -Inf, xmax = Inf, ymin = low_y_max, ymax = high_y_min, fill = "white", alpha = 1) +
   geom_vline(xintercept = baseline_threshold, linetype = "dashed", color = "#333333", linewidth = 0.85) +
   geom_segment(
     aes(x = 0, xend = baseline_disp, yend = y_position),
@@ -424,7 +420,7 @@ pB <- ggplot(baseline_ranked, aes(y = y_position)) +
   annotate(
     "text",
     x = baseline_threshold + 0.12,
-    y = low_y_min - 0.35,
+    y = gap_y_mid,
     label = "threshold = 2",
     hjust = 0,
     vjust = 0.5,
@@ -436,7 +432,7 @@ pB <- ggplot(baseline_ranked, aes(y = y_position)) +
     "text",
     x = y_cap * 0.85,
     y = low_y_min + n_low / 2,
-    label = "Low proliferators\nbaseline < 2",
+    label = "LOW PROLIFERATORS\nbaseline < 2",
     color = "#2F8F35",
     fontface = "bold",
     size = 3.35,
@@ -447,14 +443,13 @@ pB <- ggplot(baseline_ranked, aes(y = y_position)) +
     "text",
     x = y_cap * 0.85,
     y = high_y_min + n_high / 2,
-    label = "High proliferators\nbaseline >= 2",
-    color = "#7A8B78",
-    fontface = "plain",
+    label = "HIGH PROLIFERATORS\nbaseline >= 2",
+    color = "#596B57",
+    fontface = "bold",
     size = 3.15,
     hjust = 0.5,
     vjust = 0.5
   ) +
-  biology_icon("aCD3\nbaseline", x = y_cap * 0.16, y = low_y_max - 0.8, align = "left") +
   scale_x_continuous(breaks = 0:5, expand = expansion(mult = c(0, 0.14))) +
   scale_y_continuous(
     breaks = baseline_ranked$y_position,
@@ -465,7 +460,7 @@ pB <- ggplot(baseline_ranked, aes(y = y_position)) +
   labs(
     tag = "B",
     x = "Baseline stimulation (aCD3/msIgG)",
-    y = "Patient (low to high baseline proliferation)"
+    y = "Patient (high to low baseline proliferation)"
   ) +
   theme_fig3(base_size = 11) +
   theme(
@@ -474,7 +469,8 @@ pB <- ggplot(baseline_ranked, aes(y = y_position)) +
     legend.position = "none"
   )
 
-drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show, show_legend = FALSE) {
+drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
+                          show_legend = FALSE, use_pseudolog = use_pseudolog_cd) {
   if (!drug_col %in% names(data)) {
     stop("Column not found: ", drug_col, call. = FALSE)
   }
@@ -496,10 +492,36 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
   x_max <- max(response_cutoff * 1.15, max(plot_data$Value, na.rm = TRUE) * 1.08)
   stat_row <- stats_tbl |> filter(drug == drug_col, group == group_to_show)
   p_label <- if (nrow(stat_row) == 0) "p=NA" else format_p(stat_row$p_wilcoxon_vs_1_greater[1])
+  group_note <- if_else(
+    group_to_show == "Low Proliferators",
+    "Low proliferators from Panel B (baseline < 2)",
+    "High proliferators from Panel B (baseline >= 2)"
+  )
+  group_note_colour <- if_else(group_to_show == "Low Proliferators", "#2F8F35", "#596B57")
 
   y_breaks <- plot_data$y_position
   y_labels <- as.character(plot_data$Patient)
-  y_limits <- range(plot_data$y_position, na.rm = TRUE) + c(-0.55, 0.55)
+  y_limits <- range(plot_data$y_position, na.rm = TRUE) + c(-0.55, 1.15)
+
+  x_scale <- if (isTRUE(use_pseudolog)) {
+    scale_x_continuous(
+      trans = pseudo_log_trans(sigma = 0.25, base = 10),
+      breaks = c(0, 0.5, 1, response_cutoff, 2, 5, 10, 25),
+      labels = c("0", "0.5", "1", "1.5", "2", "5", "10", "25"),
+      expand = expansion(mult = c(0.02, 0.16))
+    )
+  } else {
+    linear_breaks <- if (x_max > 12) {
+      c(0, 1, response_cutoff, 5, 10, 25)
+    } else {
+      c(0, 1, response_cutoff, 2, 5, 10)
+    }
+    scale_x_continuous(
+      breaks = linear_breaks,
+      labels = label_number(accuracy = 0.1),
+      expand = expansion(mult = c(0.02, 0.16))
+    )
+  }
 
   ggplot(plot_data, aes(y = y_position)) +
     panel_background(xmin = x_min, xmax = x_max, low_speckles = 320, show_high = group_to_show == "High Proliferators") +
@@ -534,19 +556,21 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
       hjust = 0.5,
       vjust = 0.5
     ) +
-    biology_icon(
-      paste0(title_label, "\nT cell rescue"),
-      x = x_max * 0.28,
-      y = max(plot_data$y_position, na.rm = TRUE) - 0.35,
-      align = "left"
+    annotate(
+      "label",
+      x = x_min + (x_max - x_min) * 0.02,
+      y = max(plot_data$y_position, na.rm = TRUE) + 0.78,
+      label = group_note,
+      hjust = 0,
+      vjust = 0.5,
+      size = 2.75,
+      fontface = "bold",
+      color = group_note_colour,
+      fill = "white",
+      linewidth = 0.22
     ) +
     scale_fill_manual(values = response_colours, name = "T cell rescue") +
-    scale_x_continuous(
-      trans = pseudo_log_trans(sigma = 0.25, base = 10),
-      breaks = c(0, 0.5, 1, response_cutoff, 2, 5, 10, 25),
-      labels = c("0", "0.5", "1", "1.5", "2", "5", "10", "25"),
-      expand = expansion(mult = c(0.02, 0.16))
-    ) +
+    x_scale +
     scale_y_continuous(
       breaks = y_breaks,
       labels = y_labels,
@@ -555,8 +579,16 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
     coord_cartesian(xlim = c(x_min, x_max), ylim = y_limits, clip = "off") +
     labs(
       tag = panel_tag,
-      x = paste0(title_label, " ratio to control (pseudo-log scale)"),
-      y = if_else(group_to_show == "Low Proliferators", "Low proliferator patients", "High proliferator patients")
+      x = paste0(
+        title_label,
+        " ratio to control",
+        if_else(isTRUE(use_pseudolog), " (pseudo-log scale)", " (linear scale)")
+      ),
+      y = if_else(
+        group_to_show == "Low Proliferators",
+        "Low proliferators from Panel B",
+        "High proliferators from Panel B"
+      )
     ) +
     theme_fig3(base_size = 11) +
     theme(
@@ -570,14 +602,28 @@ pC_low <- drug_bar_plot(df, "Entospletinib", "C", "Entospletinib", "Low Prolifer
 pD_low <- drug_bar_plot(df, "aPD1", "D", "aPD1", "Low Proliferators")
 pC_high <- drug_bar_plot(df, "Entospletinib", "C", "Entospletinib", "High Proliferators", show_legend = TRUE)
 pD_high <- drug_bar_plot(df, "aPD1", "D", "aPD1", "High Proliferators")
+pC_low_linear <- drug_bar_plot(df, "Entospletinib", "C", "Entospletinib", "Low Proliferators", show_legend = TRUE, use_pseudolog = FALSE)
+pD_low_linear <- drug_bar_plot(df, "aPD1", "D", "aPD1", "Low Proliferators", use_pseudolog = FALSE)
 
-figure3_main <- pA_median / (pC_low | pB | pD_low) +
+figure3_main <- pA_stacked / (pB | pC_low | pD_low) +
   plot_layout(heights = c(1.35, 1), guides = "keep") &
   theme(plot.margin = margin(5, 8, 5, 8))
 
-figure3_supp <- pC_high | pB | pD_high +
-  plot_layout(guides = "keep") &
-  theme(plot.margin = margin(5, 8, 5, 8))
+figure3_supp <- pB | pC_high | pD_high +
+  plot_layout(guides = "keep") +
+  plot_annotation(title = "Supplement: high proliferator drug responses from Panel B") &
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.margin = margin(5, 8, 5, 8)
+  )
+
+figure3_main_linear_cd <- pA_stacked / (pB | pC_low_linear | pD_low_linear) +
+  plot_layout(heights = c(1.35, 1), guides = "keep") +
+  plot_annotation(title = "Linear-scale comparison for Panels C-D") &
+  theme(
+    plot.title = element_text(face = "bold", size = 14, hjust = 0),
+    plot.margin = margin(5, 8, 5, 8)
+  )
 
 save_plot_pair <- function(plot, stem, width = 16, height = 11, dpi = 400) {
   pdf_file <- file.path(output_dir, paste0(stem, ".pdf"))
@@ -588,11 +634,10 @@ save_plot_pair <- function(plot, stem, width = 16, height = 11, dpi = 400) {
   message("Saved: ", normalizePath(png_file))
 }
 
-save_plot_pair(figure3_main, "figure3_v4_tania_comments", width = 16, height = 11)
-save_plot_pair(figure3_supp, "figure3_v4_supp_high_proliferators", width = 16, height = 6.5)
-save_plot_pair(pA_median, "figure3_v4_panelA_violin_median", width = 14, height = 7.5)
-save_plot_pair(pA_sd, "figure3_v4_panelA_violin_sd", width = 14, height = 7.5)
+save_plot_pair(figure3_main, "figure3_v5_panelA_stacked", width = 16, height = 11)
+save_plot_pair(figure3_supp, "figure3_v5_supp_high_proliferators", width = 16, height = 6.5)
+save_plot_pair(figure3_main_linear_cd, "figure3_v5_panelA_stacked_cd_linear", width = 16, height = 11)
+save_plot_pair(pA_stacked, "figure3_v5_panelA_stacked_only", width = 14, height = 7.5)
 
 message("Data source created date from macOS stat: ", data_created[1])
 message("Data source modified time: ", as.character(data_modified))
-

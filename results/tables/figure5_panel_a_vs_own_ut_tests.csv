@@ -1,0 +1,25 @@
+time_point,treat,dose_label,npm1_genot,n,median_treated,median_ut,statistic_v,p_value,test_method,max_observed,p_adjust_bh,p_label,plot_genot,x_group,x_start,x_end,y_position,tick_low
+2 h flow,ENTO,1,WT,2,0.972,1,0,0.5,Wilcoxon signed rank exact test,0.976,0.5,UT p=0.50,WT,2,1.78,2.22,1.066,1.0310000000000001
+2 h flow,ENTO,1,mut,2,0.597,1,0,0.5,Wilcoxon signed rank exact test,0.611,0.5,UT p=0.50,mut,2,1.78,2.22,0.701,0.6659999999999999
+2 h flow,ENTO,10,WT,2,0.6174999999999999,1,0,0.5,Wilcoxon signed rank exact test,0.813,0.5,UT p=0.50,WT,3,2.78,3.22,0.9029999999999999,0.8679999999999999
+2 h flow,ENTO,10,mut,2,0.262,1,0,0.5,Wilcoxon signed rank exact test,0.274,0.5,UT p=0.50,mut,3,2.78,3.22,0.364,0.32899999999999996
+2 h flow,ENTO,30,WT,2,0.563,1,0,0.5,Wilcoxon signed rank exact test,0.729,0.5,UT p=0.50,WT,4,3.78,4.22,0.819,0.7839999999999999
+2 h flow,ENTO,30,mut,2,0.226,1,0,0.5,Wilcoxon signed rank exact test,0.268,0.5,UT p=0.50,mut,4,3.78,4.22,0.358,0.32299999999999995
+2 h flow,LANRA,1,WT,2,0.7395,1,0,0.5,Wilcoxon signed rank exact test,0.922,0.5,UT p=0.50,WT,5,4.78,5.22,1.012,0.977
+2 h flow,LANRA,1,mut,2,0.584,1,0,0.5,Wilcoxon signed rank exact test,0.746,0.5,UT p=0.50,mut,5,4.78,5.22,0.836,0.8009999999999999
+2 h flow,LANRA,10,WT,2,0.49950000000000006,1,0,0.5,Wilcoxon signed rank exact test,0.807,0.5,UT p=0.50,WT,6,5.78,6.22,0.897,0.862
+2 h flow,LANRA,10,mut,2,0.23299999999999998,1,0,0.5,Wilcoxon signed rank exact test,0.318,0.5,UT p=0.50,mut,6,5.78,6.22,0.40800000000000003,0.373
+2 h flow,LANRA,30,WT,2,0.4055,1,0,0.5,Wilcoxon signed rank exact test,0.655,0.5,UT p=0.50,WT,7,6.78,7.22,0.745,0.71
+2 h flow,LANRA,30,mut,2,0.097,1,0,0.5,Wilcoxon signed rank exact test,0.121,0.5,UT p=0.50,mut,7,6.78,7.22,0.211,0.176
+24 h flow,ENTO,1,WT,2,0.9550000000000001,1,0,0.5,Wilcoxon signed rank exact test,0.983,0.5,UT p=0.50,WT,2,1.78,2.22,1.073,1.038
+24 h flow,ENTO,1,mut,2,0.8225,1,0,0.5,Wilcoxon signed rank exact test,0.891,0.5,UT p=0.50,mut,2,1.78,2.22,0.981,0.946
+24 h flow,ENTO,10,WT,2,0.7125,1,0,0.5,Wilcoxon signed rank exact test,0.74,0.5,UT p=0.50,WT,3,2.78,3.22,0.83,0.7949999999999999
+24 h flow,ENTO,10,mut,2,0.519,1,0,0.5,Wilcoxon signed rank exact test,0.747,0.5,UT p=0.50,mut,3,2.78,3.22,0.837,0.8019999999999999
+24 h flow,ENTO,30,WT,2,0.5705,1,0,0.5,Wilcoxon signed rank exact test,0.68,0.5,UT p=0.50,WT,4,3.78,4.22,0.77,0.735
+24 h flow,ENTO,30,mut,2,0.4685,1,0,0.5,Wilcoxon signed rank exact test,0.607,0.5,UT p=0.50,mut,4,3.78,4.22,0.697,0.6619999999999999
+24 h flow,LANRA,1,WT,2,0.752,1,0,0.5,Wilcoxon signed rank exact test,0.78,0.5,UT p=0.50,WT,5,4.78,5.22,0.87,0.835
+24 h flow,LANRA,1,mut,2,0.5715,1,0,0.5,Wilcoxon signed rank exact test,0.62,0.5,UT p=0.50,mut,5,4.78,5.22,0.71,0.6749999999999999
+24 h flow,LANRA,10,WT,2,0.4825,1,0,0.5,Wilcoxon signed rank exact test,0.605,0.5,UT p=0.50,WT,6,5.78,6.22,0.695,0.6599999999999999
+24 h flow,LANRA,10,mut,2,0.328,1,0,0.5,Wilcoxon signed rank exact test,0.432,0.5,UT p=0.50,mut,6,5.78,6.22,0.522,0.487
+24 h flow,LANRA,30,WT,2,0.348,1,0,0.5,Wilcoxon signed rank exact test,0.566,0.5,UT p=0.50,WT,7,6.78,7.22,0.6559999999999999,0.6209999999999999
+24 h flow,LANRA,30,mut,2,0.0855,1,0,0.5,Wilcoxon signed rank exact test,0.116,0.5,UT p=0.50,mut,7,6.78,7.22,0.20600000000000002,0.171

@@ -1,0 +1,361 @@
+---
+title: "Figure 6A dose-response, v2"
+author: "Ehsan Zangene"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8.8,
+  fig.height = 6.2,
+  dpi = 300
+)
+```
+
+# Purpose
+
+This document rebuilds the old `results/figures/fig6_pa_dose_response11_6_.png`
+as a cleaner Figure 6A panel from the `Fig 6` sheet in
+`data/MS Figure data_5.4.2026.xlsx`.
+
+The attached Tania conversation and PDF mockup point toward a figure that:
+
+- keeps the same 2 h and 24 h flow dose-response story,
+- uses ENTO and LANRA as the two drug columns,
+- emphasizes NPM1 mutant response with a strong teal line,
+- keeps WT visible in coral,
+- shows individual sample trajectories faintly and the genotype median boldly,
+- labels the plotted values directly so the reader does not need a table.
+
+```{r packages}
+required_packages <- c(
+  "readxl", "dplyr", "tidyr", "ggplot2", "patchwork", "scales",
+  "stringr", "readr", "ggrepel", "ggh4x"
+)
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0) {
+  stop(
+    "Please install the missing package(s) first: ",
+    paste(missing_packages, collapse = ", "),
+    "\nExample: install.packages(c(",
+    paste(sprintf("\"%s\"", missing_packages), collapse = ", "),
+    "))",
+    call. = FALSE
+  )
+}
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+library(scales)
+library(stringr)
+library(readr)
+library(ggrepel)
+library(ggh4x)
+```
+
+```{r paths}
+input_file <- file.path("data", "MS Figure data_5.4.2026.xlsx")
+sheet_name <- "Fig 6"
+output_dir <- file.path("results", "figures")
+table_dir <- file.path("results", "tables")
+
+if (!file.exists(input_file) && file.exists("MS Figure data_5.4.2026.xlsx")) {
+  input_file <- "MS Figure data_5.4.2026.xlsx"
+}
+
+if (!file.exists(input_file)) {
+  stop(
+    "Input file not found: ", input_file,
+    "\nPut 'MS Figure data_5.4.2026.xlsx' inside the project's data/ folder.",
+    call. = FALSE
+  )
+}
+
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+# Read Figure 6A Blocks
+
+The `Fig 6` sheet is formatted as a manuscript figure worksheet rather than a
+tidy table. The Figure 6A data are in two blocks:
+
+- rows 7-13: total-cell flow relative pSYK at 2 h,
+- rows 20-26: total-cell flow relative pSYK at 24 h.
+
+Columns 4-5 are NPM1 WT samples, and columns 7-8 are NPM1 mutant samples.
+
+```{r parse-figure-6a}
+raw_fig6 <- readxl::read_excel(input_file, sheet = sheet_name, col_names = FALSE)
+
+parse_fig6a_block <- function(raw, row_idx, flow_time) {
+  block <- raw[row_idx, , drop = FALSE]
+
+  tibble(
+    treat = as.character(block[[1]]),
+    dosage = as.character(block[[3]]),
+    wt_1 = suppressWarnings(as.numeric(block[[4]])),
+    wt_2 = suppressWarnings(as.numeric(block[[5]])),
+    mut_1 = suppressWarnings(as.numeric(block[[7]])),
+    mut_2 = suppressWarnings(as.numeric(block[[8]]))
+  ) |>
+    filter(!is.na(treat), treat %in% c("ENTO", "LANRA")) |>
+    pivot_longer(
+      cols = c(wt_1, wt_2, mut_1, mut_2),
+      names_to = "sample_code",
+      values_to = "rel_p_syk"
+    ) |>
+    filter(!is.na(rel_p_syk)) |>
+    mutate(
+      flow_time = flow_time,
+      npm1_genot = if_else(str_detect(sample_code, "^wt"), "WT", "mut"),
+      sample_id = case_when(
+        sample_code == "wt_1" ~ "WT sample 1",
+        sample_code == "wt_2" ~ "WT sample 2",
+        sample_code == "mut_1" ~ "mut sample 1",
+        sample_code == "mut_2" ~ "mut sample 2",
+        TRUE ~ sample_code
+      ),
+      dose_nM = readr::parse_number(dosage),
+      dose_uM = dose_nM / 1000,
+      dose_axis = dose_nM,
+      dose_label = case_when(
+        flow_time == 2 ~ as.character(dose_nM),
+        TRUE ~ as.character(dose_nM)
+      ),
+      condition_id = paste(flow_time, treat, npm1_genot, sample_id, sep = "_"),
+      inhibition = 1 - rel_p_syk
+    )
+}
+
+fig6_pa_long <- bind_rows(
+  parse_fig6a_block(raw_fig6, 7:13, 2),
+  parse_fig6a_block(raw_fig6, 20:26, 24)
+) |>
+  mutate(
+    treat = factor(treat, levels = c("ENTO", "LANRA")),
+    npm1_genot = factor(npm1_genot, levels = c("WT", "mut")),
+    flow_time = factor(flow_time, levels = c(2, 24), labels = c("2 h", "24 h"))
+  ) |>
+  arrange(flow_time, treat, npm1_genot, sample_id, dose_axis)
+
+fig6_pa_summary <- fig6_pa_long |>
+  group_by(flow_time, treat, npm1_genot, dose_axis, dose_label) |>
+  summarise(
+    n = n(),
+    median_rel_p_syk = median(rel_p_syk, na.rm = TRUE),
+    mean_rel_p_syk = mean(rel_p_syk, na.rm = TRUE),
+    sd_rel_p_syk = sd(rel_p_syk, na.rm = TRUE),
+    median_inhibition = median(inhibition, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+readr::write_csv(fig6_pa_long, file.path(table_dir, "fig6_pa_panel_a_long_data.csv"))
+readr::write_csv(fig6_pa_summary, file.path(table_dir, "fig6_pa_panel_a_summary_v2.csv"))
+
+fig6_pa_long
+```
+
+# Figure Style
+
+```{r figure-style}
+npm1_colours <- c("WT" = "#F06D67", "mut" = "#05B9C2")
+npm1_light <- c("WT" = alpha("#F06D67", 0.28), "mut" = alpha("#05B9C2", 0.28))
+
+theme_fig6a <- function(base_size = 10.5) {
+  theme_classic(base_size = base_size) +
+    theme(
+      axis.line = element_line(color = "grey20", linewidth = 0.45),
+      axis.ticks = element_line(color = "grey20", linewidth = 0.35),
+      axis.text = element_text(color = "grey20"),
+      axis.title = element_text(face = "bold", color = "grey10"),
+      panel.grid.major.y = element_line(color = "grey88", linewidth = 0.35),
+      panel.grid.minor = element_blank(),
+      strip.placement = "outside",
+      strip.text.x = element_text(face = "bold", size = 11, color = "grey12"),
+      strip.text.y = element_text(face = "bold", size = 11, color = "grey12"),
+      legend.position = "right",
+      legend.title = element_text(face = "bold"),
+      legend.key = element_rect(fill = "white", color = NA),
+      plot.title = element_text(face = "bold", size = 12, hjust = 0),
+      plot.margin = margin(6, 8, 6, 8),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    )
+}
+```
+
+# Panel A: Dose Response
+
+```{r figure-6a-dose-response, fig.width=8.8, fig.height=6.2}
+label_df <- fig6_pa_long |>
+  mutate(
+    label = sprintf("%.2f", rel_p_syk),
+    label_nudge_x = case_when(
+      dose_axis == min(dose_axis) ~ -0.02,
+      TRUE ~ 0.06
+    )
+  )
+
+p_fig6a <- ggplot(
+  fig6_pa_long,
+  aes(x = dose_axis, y = rel_p_syk, color = npm1_genot)
+) +
+  geom_hline(yintercept = 1, linetype = "dashed", linewidth = 0.35, color = "grey25") +
+  geom_line(
+    aes(group = condition_id, color = npm1_genot),
+    linewidth = 0.75,
+    alpha = 0.30
+  ) +
+  geom_point(
+    aes(group = condition_id, color = npm1_genot),
+    size = 2.25,
+    alpha = 0.95
+  ) +
+  stat_summary(
+    aes(group = npm1_genot, color = npm1_genot),
+    fun = median,
+    geom = "line",
+    linewidth = 1.65
+  ) +
+  stat_summary(
+    aes(group = npm1_genot, color = npm1_genot),
+    fun = median,
+    geom = "point",
+    shape = 18,
+    size = 3.3
+  ) +
+  ggrepel::geom_text_repel(
+    data = label_df,
+    aes(label = label, color = npm1_genot),
+    size = 3.0,
+    fontface = "bold",
+    min.segment.length = Inf,
+    box.padding = 0.10,
+    point.padding = 0.05,
+    max.overlaps = Inf,
+    show.legend = FALSE,
+    seed = 612
+  ) +
+  ggh4x::facet_grid2(
+    rows = vars(flow_time),
+    cols = vars(treat),
+    scales = "free_x",
+    independent = "x",
+    strip = ggh4x::strip_themed(
+      background_x = ggh4x::elem_list_rect(
+        fill = c("#9EB9EA", "#F4B6B5"),
+        color = NA
+      ),
+      background_y = ggh4x::elem_list_rect(
+        fill = c("#D7D7D7", "#D7D7D7"),
+        color = NA
+      )
+    )
+  ) +
+  ggh4x::facetted_pos_scales(
+    x = list(
+      flow_time == "2 h" ~ scale_x_continuous(
+        trans = scales::pseudo_log_trans(base = 10),
+        breaks = c(1, 10, 30),
+        labels = c("1", "10", "30"),
+        expand = expansion(mult = c(0.22, 0.20))
+      ),
+      flow_time == "24 h" ~ scale_x_continuous(
+        trans = scales::pseudo_log_trans(base = 10),
+        breaks = c(200, 1000, 5000),
+        labels = c("200", "1000", "5000"),
+        expand = expansion(mult = c(0.22, 0.20))
+      )
+    )
+  ) +
+  scale_y_continuous(
+    limits = c(0, 1.12),
+    breaks = c(0, 0.25, 0.50, 0.75, 1.00),
+    expand = expansion(mult = c(0.03, 0.08))
+  ) +
+  scale_color_manual(
+    name = "NPM1",
+    values = npm1_colours,
+    labels = c("WT", "mut")
+  ) +
+  guides(
+    color = guide_legend(
+      override.aes = list(linewidth = 1.6, size = 3.2, alpha = 1)
+    )
+  ) +
+  labs(
+    title = "Figure 6A: dose-response of relative pSYK by NPM1 genotype",
+    x = "Dose (nM)",
+    y = "Relative pSYK (treated / untreated)"
+  ) +
+  theme_fig6a()
+
+p_fig6a
+
+ggsave(
+  file.path(output_dir, "fig6_pa_dose_response_v2.png"),
+  p_fig6a,
+  width = 8.8,
+  height = 6.2,
+  dpi = 450,
+  bg = "white"
+)
+
+ggsave(
+  file.path(output_dir, "fig6_pa_dose_response_v2.pdf"),
+  p_fig6a,
+  width = 8.8,
+  height = 6.2,
+  bg = "white"
+)
+```
+
+# Optional Layout Proof
+
+The attached PDF mockup shows duplicate "Panel A" and "Panel B" blocks. This
+extra proof stacks two copies of the dose-response panel so the layout can be
+tested in a larger figure assembly without changing the underlying plot.
+
+```{r optional-stacked-layout-proof, fig.width=8.8, fig.height=12.8}
+p_panel_a <- p_fig6a + plot_annotation(tag_levels = "A")
+p_panel_b <- p_fig6a + plot_annotation(tag_levels = "B")
+
+p_stacked_proof <- p_panel_a / p_panel_b +
+  plot_layout(heights = c(1, 1), guides = "collect") &
+  theme(legend.position = "right")
+
+p_stacked_proof
+
+ggsave(
+  file.path(output_dir, "fig6_pa_dose_response_v2_stacked_layout_proof.png"),
+  p_stacked_proof,
+  width = 8.8,
+  height = 12.8,
+  dpi = 350,
+  bg = "white"
+)
+```
+
+# Notes For Manuscript Interpretation
+
+```{r interpretation, results='asis'}
+cat("- Lower relative pSYK means stronger pSYK inhibition after treatment.\n")
+cat("- The visual emphasis is on whether NPM1 mutant samples drop more than WT samples across dose.\n")
+cat("- Individual samples are retained as faint lines; the bold diamond trajectory is the genotype median.\n")
+```
