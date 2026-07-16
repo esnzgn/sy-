@@ -477,7 +477,6 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
 
   plot_data <- data |>
     select(Patient, Value = all_of(drug_col)) |>
-    filter(!is.na(Value)) |>
     left_join(patient_groups, by = "Patient") |>
     filter(group == group_to_show, !is.na(y_position)) |>
     mutate(Patient = factor(Patient, levels = patient_order)) |>
@@ -488,10 +487,22 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
       label_x = if_else(Value < 0, 0, Value)
     )
 
-  x_min <- min(0, min(plot_data$Value, na.rm = TRUE)) * 1.08
-  x_max <- max(response_cutoff * 1.15, max(plot_data$Value, na.rm = TRUE) * 1.08)
+  observed_data <- plot_data |> filter(!is.na(Value))
+  missing_data <- plot_data |> filter(is.na(Value))
+  observed_values <- observed_data$Value
+
+  if (length(observed_values) == 0 || all(is.na(observed_values))) {
+    stop("No measured values found for ", drug_col, " in ", group_to_show, call. = FALSE)
+  }
+
+  x_min <- min(0, min(observed_values, na.rm = TRUE)) * 1.08
+  x_max <- max(response_cutoff * 1.15, max(observed_values, na.rm = TRUE) * 1.08)
   stat_row <- stats_tbl |> filter(drug == drug_col, group == group_to_show)
-  p_label <- if (nrow(stat_row) == 0) "p=NA" else format_p(stat_row$p_wilcoxon_vs_1_greater[1])
+  p_label <- if (nrow(stat_row) == 0) {
+    "vs ratio = 1\np=NA"
+  } else {
+    paste0("vs ratio = 1\n", format_p(stat_row$p_wilcoxon_vs_1_greater[1]))
+  }
   group_note <- if_else(
     group_to_show == "Low Proliferators",
     "Low proliferators from Panel B (baseline < 2)",
@@ -527,6 +538,7 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
     panel_background(xmin = x_min, xmax = x_max, low_speckles = 320, show_high = group_to_show == "High Proliferators") +
     geom_vline(xintercept = 1, linetype = "dashed", color = "grey55", linewidth = 0.6) +
     geom_rect(
+      data = observed_data,
       aes(
         xmin = pmin(0, Value),
         xmax = pmax(0, Value),
@@ -539,11 +551,21 @@ drug_bar_plot <- function(data, drug_col, panel_tag, title_label, group_to_show,
       alpha = 0.96
     ) +
     geom_text(
+      data = observed_data,
       aes(x = label_x, label = round(Value, 2)),
       hjust = -0.25,
       vjust = 0.5,
       size = 2.6,
       color = "grey25"
+    ) +
+    geom_text(
+      data = missing_data,
+      aes(x = response_cutoff * 0.45, label = "not measured"),
+      hjust = 0,
+      vjust = 0.5,
+      size = 2.45,
+      color = "grey55",
+      fontface = "italic"
     ) +
     annotate(
       "text",
